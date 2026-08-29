@@ -1,5 +1,8 @@
 # Media Content Understanding
 
+[![test](https://github.com/miaomiao636/media-content-understanding/actions/workflows/test.yml/badge.svg)](https://github.com/miaomiao636/media-content-understanding/actions/workflows/test.yml)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 一个面向 Agent Skills 客户端的开源 Skill：读取公开的抖音和哔哩哔哩视频链接，提取字幕或执行 ASR，结合关键画面生成精炼、可审计的媒体理解包。
 
 它不负责 Obsidian 入库，也不用于绕过登录、付费、私密、DRM 或平台访问控制。
@@ -20,6 +23,7 @@
 推荐使用 Python 3.9+、[uv](https://docs.astral.sh/uv/) 和 FFmpeg：
 
 ```bash
+git clone https://github.com/miaomiao636/media-content-understanding.git
 cd media-content-understanding
 uv sync --extra all
 uv run playwright install chromium
