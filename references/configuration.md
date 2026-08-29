@@ -11,6 +11,8 @@
 
 没有配置文件时使用安全默认值：系统缓存目录、用户文档目录下的持久输出目录、`yt-dlp` 主获取、Playwright 可选回退、无外部视觉模型、允许宿主视觉回退。
 
+运行参数的生效顺序是：显式命令行参数、用户配置、内置默认值。命令行没有传值时才读取 `config.json`；这与上面的“从哪里寻找配置文件”是两个不同层次的优先级。
+
 从 `assets/config.example.json` 复制配置结构。API Key 不得写入配置；macOS 使用钥匙串字段，CI 或其他系统使用 `api_key_env`。当两者都存在时，环境变量优先。`base_url` 可以直接写非敏感地址，也可以用 `base_url_env`。
 
 ## 密钥持久化
@@ -32,10 +34,31 @@ Windows/Linux 默认优先使用 `api_key_env` 对应的环境变量。安装 `k
 | --- | --- |
 | `acquisition.browser_fallback` | `yt-dlp` 失败后是否允许 Playwright 回退 |
 | `acquisition.browser_headless` | 是否使用无界面浏览器；默认 `false`，因为抖音在无界面模式下可能只返回数秒预览片段 |
+| `acquisition.browser_profile_dir` | 可选的 Skill 专用浏览器档案目录；非空代表用户明确授权 Playwright 跨任务保存登录状态 |
 | `acquisition.cookie_browser` | 用户明确授权时传给 `yt-dlp --cookies-from-browser` 的浏览器名；默认空 |
-| `acquisition.max_download_mb` | 单个媒体任务的下载大小上限 |
+| `acquisition.max_download_mb` | 单个媒体文件的下载大小上限；同时约束 `yt-dlp`、Playwright 下载和浏览器最终合并媒体 |
 
-不得自动探测或读取浏览器 Cookie。配置 `cookie_browser` 视为用户对该设备本次工作流的明确授权。
+不得自动探测或读取浏览器 Cookie。配置 `cookie_browser` 视为允许 `yt-dlp` 读取所指浏览器的 Cookie；配置 `browser_profile_dir` 视为允许 Playwright 在独立目录保存本 Skill 自己的登录状态。两者默认均为空。
+
+推荐把 `browser_profile_dir` 放在持久的应用数据目录，不要放入项目、缓存或输出目录。例如 macOS 可使用：
+
+```json
+{
+  "acquisition": {
+    "browser_profile_dir": "/Users/你的用户名/Library/Application Support/media-content-understanding/browser-profile"
+  }
+}
+```
+
+专用档案不会导入或污染日常 Chrome。首次运行时由用户在该窗口完成登录，后续任务复用该档案。查看和清除状态：
+
+```bash
+uv run mcu browser-profile status
+uv run mcu browser-profile reset
+uv run mcu browser-profile reset --yes
+```
+
+`reset` 默认只预览；`--yes` 也只会删除同时满足“配置路径、有效管理标记、非项目目录”三项条件的专用档案。专用档案不能与 `temp_root`、`output_root`、用户主目录或文件系统根目录重叠。同一时间只能有一个任务占用同一档案；冲突会报告 `BROWSER_PROFILE_IN_USE`。平台仍可能因会话过期或风控要求重新登录。
 
 ## ASR 配置
 
@@ -44,6 +67,18 @@ Windows/Linux 默认优先使用 `api_key_env` 对应的环境变量。安装 `k
 | `asr.mode` | `auto`、`local` 或 `none` |
 | `asr.local_model` | faster-whisper 模型名，默认 `small` |
 | `asr.language` | 默认转写语言，中文为 `zh` |
+
+## 缓存保留配置
+
+| 字段 | 实际行为 |
+| --- | --- |
+| `retention.cleanup_on_success` | `analyze` 的输出包验证通过后是否删除本次临时任务 |
+| `retention.failed_job_retention_hours` | 失败任务在自动清理前保留的小时数 |
+| `retention.cache_ttl_days` | 已完成、未知或遗留任务的通用缓存期限 |
+| `retention.max_cache_gb` | 带本 Skill 标记的缓存任务总容量上限；超限时优先清理最旧的非运行任务 |
+| `retention.keep_source_media` | 阻止成功任务立即清理，将来源保留在受控缓存；仍受 TTL 和容量策略管理 |
+
+`mcu acquire` 的目标就是交付来源文件，因此即使 `cleanup_on_success=true` 也会保留该任务；后续启动或手工清理仍会应用 TTL 和容量策略。`keep_source_media` 不会把完整原视频复制进持久输出包。
 
 ## 视觉模型字段
 
@@ -73,7 +108,7 @@ Windows/Linux 默认优先使用 `api_key_env` 对应的环境变量。安装 `k
 
 脚本不能代替 Agent 判断自身是否支持原生视觉。`vision_router.py` 只尝试外部模型；退出码为 `20` 或 `21` 时，Agent 根据 `host_fallback` 决定是否使用宿主的图片查看能力。
 
-## 配置优先原则
+## 视觉模型选择原则
 
 - 外部视觉模型按优先级先于宿主模型。
 - 只选择能力匹配的模型。

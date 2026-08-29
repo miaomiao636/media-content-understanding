@@ -11,6 +11,7 @@
 
 - 抖音和哔哩哔哩链接识别、短链解析与元数据获取。
 - `yt-dlp` 主获取器，Playwright 真实浏览器可选回退。
+- 可选的 Skill 专用持久浏览器档案，首次登录后可跨任务复用抖音会话。
 - 平台字幕优先，无字幕时可使用 `faster-whisper`。
 - 稀疏故事板、外部视觉模型路由和宿主视觉回退。
 - 静态截图与动态短片的最小证据策略。
@@ -55,6 +56,10 @@ uv run mcu analyze "https://www.bilibili.com/video/BV..." --focus "提炼操作�
 
 结果默认保存到用户文档目录下的“媒体内容提炼”文件夹，可以在配置或命令行中修改。
 
+运行参数按“显式命令行参数 → 用户 `config.json` → 内置默认值”的顺序解析。例如未传 `--asr-model` 时使用 `asr.local_model`，显式传入时则覆盖配置。
+
+如需保留抖音登录状态，在用户配置中明确设置独立的 `acquisition.browser_profile_dir`。它不会读取日常 Chrome。可用 `uv run mcu browser-profile status` 查看，用 `uv run mcu browser-profile reset --yes` 清除。
+
 ## 配置视觉模型
 
 从 `assets/config.example.json` 创建用户配置，将要使用的 provider 的 `enabled` 设为 `true`。模板保留“千问主模型、MiMo 第二备用”的顺序，但默认全部关闭，也不包含 API Key。不要把 API Key 写进 JSON。
@@ -70,7 +75,7 @@ export MIMO_API_KEY="..."
 ## 当前边界
 
 - 平台风控会持续变化，任何单一下载器都不能保证永久可用。
-- Playwright 回退不会自动读取浏览器 Cookie；需要登录态时必须由用户明确配置。
+- Playwright 默认不会自动读取或保存浏览器 Cookie；只有用户明确配置专用档案目录时才跨任务保存该 Skill 的登录状态。
 - 没有字幕、没有本地 ASR、宿主不支持视觉且未配置外部视觉模型时，只能生成部分结果。
 - B站合集和多分P默认处理链接直接指向的单个视频/分P；批量范围应由用户明确指定。
 
@@ -85,7 +90,7 @@ uv run python scripts/package_tool.py validate /path/to/package
 
 ## 隐私与版权
 
-默认不永久保存完整原视频，不记录 API Key、Cookie、Authorization 头或签名媒体地址。请只分析你有权访问的内容，并遵守平台条款和适用法律。
+`mcu analyze` 的输出包通过验证后，默认删除本次受控临时任务；失败任务按配置保留，方便续跑和排查。`mcu acquire` 会保留其来源文件，但仍受缓存 TTL 和容量策略管理。任何流程都不记录 API Key、Cookie、Authorization 头或签名媒体地址。请只分析你有权访问的内容，并遵守平台条款和适用法律。
 
 安全问题请阅读 [SECURITY.md](SECURITY.md)。
 

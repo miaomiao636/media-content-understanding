@@ -68,7 +68,9 @@ uv sync --extra browser
 uv run playwright install chromium
 ```
 
-默认使用隔离的可见浏览器窗口，不读取个人 Chrome Cookie。抖音在无界面模式下可能只返回数秒预览片段，因此桌面环境建议保持 `acquisition.browser_headless: false`。服务器或 CI 可设为 `true`，但若完整性校验报错，应改用可见浏览器或用户主动提供本地媒体。只有用户明确授权时，才在配置中设置 `acquisition.cookie_browser`。公共自动化和 CI 不应启用个人 Cookie。
+默认使用隔离的可见浏览器窗口，不读取个人 Chrome Cookie。抖音在无界面模式下可能只返回数秒预览片段，因此桌面环境建议保持 `acquisition.browser_headless: false`。服务器或 CI 可设为 `true`，但若完整性校验报错，应改用可见浏览器或用户主动提供本地媒体。
+
+需要跨任务保留抖音登录时，可由用户明确配置 `acquisition.browser_profile_dir`。它是本 Skill 的独立浏览器档案，不会导入或污染日常 Chrome。第一次在该窗口登录后，后续任务可以复用；平台会话过期时仍可能要求重新登录。用 `mcu browser-profile status` 查看状态，用 `mcu browser-profile reset --yes` 清除。公共自动化和 CI 不应启用个人 Cookie 或持久登录档案。
 
 ## 可选本地 ASR
 

@@ -6,6 +6,7 @@
   "acquisition": {
     "browser_fallback": true,
     "browser_headless": false,
+    "browser_profile_dir": "",
     "cookie_browser": "",
     "max_download_mb": 2048
   },

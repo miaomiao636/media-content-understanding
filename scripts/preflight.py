@@ -67,6 +67,20 @@ def main() -> int:
         if not writable_parent(path):
             errors.append({"type": "PATH_NOT_WRITABLE", "message": f"{label} 的现有父目录不可写：{path}"})
 
+    profile_value = str(config.get("acquisition", {}).get("browser_profile_dir") or "").strip()
+    browser_profile = {
+        "configured": bool(profile_value),
+        "path": profile_value or None,
+        "exists": bool(profile_value and Path(profile_value).is_dir()),
+    }
+    if profile_value and not writable_parent(Path(profile_value)):
+        errors.append(
+            {
+                "type": "PATH_NOT_WRITABLE",
+                "message": f"browser_profile_dir 的现有父目录不可写：{profile_value}",
+            }
+        )
+
     provider_rows = []
     for index, provider in enumerate(config["vision"].get("providers", [])):
         if not isinstance(provider, dict) or not provider.get("enabled", False):
@@ -120,6 +134,7 @@ def main() -> int:
         "ok": not errors,
         "config_path": str(config_path) if config_path else None,
         "paths": {"temp_root": str(temp_root), "output_root": str(output_root)},
+        "browser_profile": browser_profile,
         "tools": checks,
         "vision_providers": sorted(provider_rows, key=lambda row: row["priority"]),
         "host_vision": args.host_vision,

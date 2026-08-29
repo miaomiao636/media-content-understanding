@@ -1,12 +1,18 @@
+import os
+import stat
+
 import pytest
 
 from scripts.source_adapter import (
+    BROWSER_PROFILE_MARKER,
     AcquiredSource,
     AcquisitionError,
     PlaywrightAdapter,
     SourceRouter,
+    YtDlpAdapter,
     _declared_duration,
     classify_failure,
+    default_adapters,
     extract_source_id,
     validate_supported_url,
 )
@@ -54,6 +60,7 @@ def test_source_id_extraction():
         ("HTTP Error 412", "ACCESS_RESTRICTED"),
         ("captcha verification", "CHALLENGE_REQUIRED"),
         ("connection reset", "NETWORK_ERROR"),
+        ("File is larger than max-filesize", "INPUT_TOO_LARGE"),
     ],
 )
 def test_failure_classification(message, expected):
@@ -70,6 +77,134 @@ def test_browser_candidate_scoring_prefers_matching_media():
 
 def test_declared_duration_prefers_player_total_and_element_duration():
     assert _declared_duration("00:07 / 13:27\n评论里有 35:43", [807.2]) == pytest.approx(807.2)
+
+
+def test_browser_settings_are_propagated_to_all_adapters(tmp_path):
+    profile = tmp_path / "browser-profile"
+    adapters = default_adapters(
+        {
+            "acquisition": {
+                "browser_fallback": True,
+                "browser_headless": False,
+                "browser_profile_dir": str(profile),
+                "max_download_mb": 321,
+            }
+        }
+    )
+
+    assert [adapter.max_bytes for adapter in adapters] == [321 * 1024 * 1024, 321 * 1024 * 1024]
+    assert adapters[1].profile_dir == profile.resolve()
+
+
+def test_playwright_uses_persistent_context_when_profile_is_configured(tmp_path):
+    calls = []
+    context = object()
+
+    class Chromium:
+        def launch_persistent_context(self, **kwargs):
+            calls.append(("persistent", kwargs))
+            return context
+
+        def launch(self, **kwargs):
+            raise AssertionError("配置专用档案时不应启动一次性浏览器")
+
+    playwright = type("Playwright", (), {"chromium": Chromium()})()
+    adapter = PlaywrightAdapter(profile_dir=tmp_path / "browser-profile")
+
+    returned_context, browser = adapter._launch_context(playwright, RuntimeError)
+
+    assert returned_context is context
+    assert browser is None
+    assert calls[0][0] == "persistent"
+    assert calls[0][1]["user_data_dir"] == str((tmp_path / "browser-profile").resolve())
+
+
+def test_playwright_uses_isolated_context_without_profile():
+    context = object()
+    calls = []
+
+    class Browser:
+        def new_context(self, **kwargs):
+            calls.append(("new_context", kwargs))
+            return context
+
+    class Chromium:
+        def launch(self, **kwargs):
+            calls.append(("launch", kwargs))
+            return Browser()
+
+        def launch_persistent_context(self, **kwargs):
+            raise AssertionError("未配置专用档案时不应使用持久上下文")
+
+    playwright = type("Playwright", (), {"chromium": Chromium()})()
+    adapter = PlaywrightAdapter()
+
+    returned_context, browser = adapter._launch_context(playwright, RuntimeError)
+
+    assert returned_context is context
+    assert browser is not None
+    assert [item[0] for item in calls] == ["launch", "new_context"]
+
+
+def test_playwright_reports_profile_in_use(tmp_path):
+    class ProfileInUseError(RuntimeError):
+        pass
+
+    class Chromium:
+        def launch_persistent_context(self, **kwargs):
+            raise ProfileInUseError("Failed to create a ProcessSingleton for the profile")
+
+    playwright = type("Playwright", (), {"chromium": Chromium()})()
+    adapter = PlaywrightAdapter(profile_dir=tmp_path / "browser-profile")
+
+    with pytest.raises(AcquisitionError) as exc_info:
+        adapter._launch_context(playwright, ProfileInUseError)
+
+    assert exc_info.value.error_type == "BROWSER_PROFILE_IN_USE"
+    assert "另一个任务" in str(exc_info.value)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows 不使用 POSIX 目录权限")
+def test_browser_profile_directory_is_private(tmp_path):
+    profile = tmp_path / "browser-profile"
+    adapter = PlaywrightAdapter(profile_dir=profile)
+
+    adapter._prepare_profile_dir()
+
+    assert stat.S_IMODE(profile.stat().st_mode) == 0o700
+    assert (profile / BROWSER_PROFILE_MARKER).is_file()
+
+
+def test_browser_profile_rejects_unmanaged_nonempty_directory(tmp_path):
+    profile = tmp_path / "ordinary-directory"
+    profile.mkdir()
+    (profile / "user-file.txt").write_text("keep", encoding="utf-8")
+    adapter = PlaywrightAdapter(profile_dir=profile)
+
+    with pytest.raises(AcquisitionError) as exc_info:
+        adapter._prepare_profile_dir()
+
+    assert exc_info.value.error_type == "UNSAFE_BROWSER_PROFILE"
+    assert (profile / "user-file.txt").read_text(encoding="utf-8") == "keep"
+
+
+def test_yt_dlp_rejects_media_over_download_limit(monkeypatch, tmp_path):
+    captured_command = []
+
+    def fake_run(command, **kwargs):
+        captured_command.extend(command)
+        (tmp_path / "source.mp4").write_bytes(b"x" * 1025)
+        return type("Completed", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    adapter = YtDlpAdapter(max_download_mb=1 / 1024)
+    monkeypatch.setattr(adapter, "_command", lambda: ["yt-dlp"])
+    monkeypatch.setattr("scripts.source_adapter.subprocess.run", fake_run)
+
+    with pytest.raises(AcquisitionError) as exc_info:
+        adapter.acquire("https://www.bilibili.com/video/BV1Ab411c7De", tmp_path)
+
+    assert exc_info.value.error_type == "INPUT_TOO_LARGE"
+    assert "--max-filesize" in captured_command
 
 
 class FailingAdapter:

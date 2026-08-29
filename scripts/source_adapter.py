@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
 import re
 import shutil
 import subprocess
@@ -33,6 +34,9 @@ ALLOWED_HOSTS = {
 }
 MEDIA_EXTENSIONS = {".mp4", ".mkv", ".webm", ".mov", ".flv", ".m4a", ".mp3"}
 SUBTITLE_EXTENSIONS = {".vtt", ".srt", ".ass", ".lrc"}
+BROWSER_PROFILE_MARKER = ".media-content-understanding-browser-profile"
+BROWSER_PROFILE_MARKER_CONTENT = "media-content-understanding browser profile v1\n"
+BROWSER_PROFILE_FORBIDDEN_ENTRIES = {".git", "SKILL.md", "pyproject.toml"}
 
 
 class AcquisitionError(RuntimeError):
@@ -40,6 +44,20 @@ class AcquisitionError(RuntimeError):
         super().__init__(message)
         self.error_type = error_type
         self.adapter = adapter
+
+
+def is_managed_browser_profile(path: Path) -> bool:
+    marker = path / BROWSER_PROFILE_MARKER
+    if marker.is_symlink() or not marker.is_file():
+        return False
+    try:
+        return marker.read_text(encoding="utf-8") == BROWSER_PROFILE_MARKER_CONTENT
+    except OSError:
+        return False
+
+
+def browser_profile_contains_project(path: Path) -> bool:
+    return any((path / name).exists() for name in BROWSER_PROFILE_FORBIDDEN_ENTRIES)
 
 
 @dataclass
@@ -129,6 +147,8 @@ def extract_source_id(platform: str, url: str, info: Optional[Dict[str, Any]] = 
 
 def classify_failure(text: str) -> str:
     lowered = text.lower()
+    if "max-filesize" in lowered or "file is larger than" in lowered or "too large" in lowered:
+        return "INPUT_TOO_LARGE"
     if "cookies" in lowered or "login" in lowered or "登录" in lowered:
         return "AUTHENTICATION_REQUIRED"
     if "captcha" in lowered or "verify" in lowered or "验证码" in lowered:
@@ -157,9 +177,18 @@ def find_outputs(work_dir: Path) -> Tuple[Optional[Path], List[Path], Optional[P
 class YtDlpAdapter:
     name = "yt-dlp"
 
-    def __init__(self, *, cookie_browser: str = "", timeout_seconds: int = 900):
+    def __init__(
+        self,
+        *,
+        cookie_browser: str = "",
+        timeout_seconds: int = 900,
+        max_download_mb: float = 2048,
+    ):
+        if max_download_mb <= 0:
+            raise ValueError("max_download_mb 必须大于 0")
         self.cookie_browser = cookie_browser.strip()
         self.timeout_seconds = timeout_seconds
+        self.max_bytes = int(max_download_mb * 1024 * 1024)
 
     def available(self) -> bool:
         try:
@@ -193,6 +222,8 @@ class YtDlpAdapter:
             "vtt",
             "--merge-output-format",
             "mp4",
+            "--max-filesize",
+            str(self.max_bytes),
             "--output",
             str(work_dir / "source.%(ext)s"),
         ]
@@ -212,13 +243,21 @@ class YtDlpAdapter:
             )
         except subprocess.TimeoutExpired as exc:
             raise AcquisitionError("TIMEOUT", "yt-dlp 获取超时", adapter=self.name) from exc
+        detail = (completed.stderr or completed.stdout)[-3000:].strip()
         if completed.returncode:
-            detail = (completed.stderr or completed.stdout)[-3000:].strip()
             raise AcquisitionError(classify_failure(detail), detail or "yt-dlp 获取失败", adapter=self.name)
 
         media, subtitles, info_path = find_outputs(work_dir)
         if media is None:
+            if classify_failure(detail) == "INPUT_TOO_LARGE":
+                raise AcquisitionError("INPUT_TOO_LARGE", detail, adapter=self.name)
             raise AcquisitionError("MEDIA_NOT_FOUND", "yt-dlp 未产生媒体文件", adapter=self.name)
+        if media.stat().st_size > self.max_bytes:
+            raise AcquisitionError(
+                "INPUT_TOO_LARGE",
+                f"yt-dlp 获取的媒体超过大小上限 {self.max_bytes} 字节",
+                adapter=self.name,
+            )
         info: Dict[str, Any] = {}
         if info_path:
             try:
@@ -338,10 +377,20 @@ class PlaywrightAdapter:
 
     name = "playwright-browser"
 
-    def __init__(self, *, headless: bool = True, timeout_seconds: int = 120, max_download_mb: int = 2048):
+    def __init__(
+        self,
+        *,
+        headless: bool = True,
+        timeout_seconds: int = 120,
+        max_download_mb: int = 2048,
+        profile_dir: Optional[Path] = None,
+    ):
+        if max_download_mb <= 0:
+            raise ValueError("max_download_mb 必须大于 0")
         self.headless = headless
         self.timeout_seconds = timeout_seconds
-        self.max_bytes = max_download_mb * 1024 * 1024
+        self.max_bytes = int(max_download_mb * 1024 * 1024)
+        self.profile_dir = Path(profile_dir).expanduser().resolve() if profile_dir else None
 
     def available(self) -> bool:
         try:
@@ -349,6 +398,91 @@ class PlaywrightAdapter:
             return True
         except ImportError:
             return False
+
+    def _prepare_profile_dir(self) -> None:
+        if self.profile_dir is None:
+            return
+        if self.profile_dir.is_symlink():
+            raise AcquisitionError(
+                "UNSAFE_BROWSER_PROFILE",
+                "专用浏览器档案目录不能是符号链接",
+                adapter=self.name,
+            )
+        if self.profile_dir.exists() and not self.profile_dir.is_dir():
+            raise AcquisitionError(
+                "UNSAFE_BROWSER_PROFILE",
+                "专用浏览器档案路径不是目录",
+                adapter=self.name,
+            )
+        if self.profile_dir.exists():
+            if browser_profile_contains_project(self.profile_dir):
+                raise AcquisitionError(
+                    "UNSAFE_BROWSER_PROFILE",
+                    "专用浏览器档案目录不能是项目或代码仓库",
+                    adapter=self.name,
+                )
+            has_entries = any(self.profile_dir.iterdir())
+            if has_entries and not is_managed_browser_profile(self.profile_dir):
+                raise AcquisitionError(
+                    "UNSAFE_BROWSER_PROFILE",
+                    "专用浏览器档案目录不是由本 Skill 管理的空目录或已标记目录",
+                    adapter=self.name,
+                )
+        else:
+            self.profile_dir.mkdir(parents=True, mode=0o700)
+        marker = self.profile_dir / BROWSER_PROFILE_MARKER
+        if not marker.exists():
+            marker.write_text(BROWSER_PROFILE_MARKER_CONTENT, encoding="utf-8")
+        if os.name != "nt":
+            self.profile_dir.chmod(0o700)
+
+    @staticmethod
+    def _profile_is_in_use(message: str) -> bool:
+        lowered = message.lower()
+        return any(
+            token in lowered
+            for token in (
+                "processsingleton",
+                "singletonlock",
+                "user data directory is already in use",
+                "profile is already in use",
+            )
+        )
+
+    def _launch_context(self, playwright: Any, playwright_error: Any) -> Tuple[Any, Optional[Any]]:
+        if self.profile_dir is not None:
+            self._prepare_profile_dir()
+            arguments = {
+                "user_data_dir": str(self.profile_dir),
+                "headless": self.headless,
+                "user_agent": USER_AGENT,
+            }
+            try:
+                context = playwright.chromium.launch_persistent_context(channel="chrome", **arguments)
+            except playwright_error as exc:
+                if self._profile_is_in_use(str(exc)):
+                    raise AcquisitionError(
+                        "BROWSER_PROFILE_IN_USE",
+                        "专用浏览器档案正被另一个任务占用；请等待该任务结束后重试",
+                        adapter=self.name,
+                    ) from exc
+                try:
+                    context = playwright.chromium.launch_persistent_context(**arguments)
+                except playwright_error as fallback_exc:
+                    if self._profile_is_in_use(str(fallback_exc)):
+                        raise AcquisitionError(
+                            "BROWSER_PROFILE_IN_USE",
+                            "专用浏览器档案正被另一个任务占用；请等待该任务结束后重试",
+                            adapter=self.name,
+                        ) from fallback_exc
+                    raise
+            return context, None
+
+        try:
+            browser = playwright.chromium.launch(headless=self.headless, channel="chrome")
+        except playwright_error:
+            browser = playwright.chromium.launch(headless=self.headless)
+        return browser.new_context(user_agent=USER_AGENT), browser
 
     @staticmethod
     def _candidate_score(item: Dict[str, Any], kind: str) -> int:
@@ -389,80 +523,91 @@ class PlaywrightAdapter:
         user_agent = USER_AGENT
         try:
             with sync_playwright() as playwright:
+                context = None
+                browser = None
                 try:
-                    browser = playwright.chromium.launch(headless=self.headless, channel="chrome")
-                except PlaywrightError:
-                    browser = playwright.chromium.launch(headless=self.headless)
-                context = browser.new_context(user_agent=USER_AGENT)
-                page = context.new_page()
+                    context, browser = self._launch_context(playwright, PlaywrightError)
+                    page = context.new_page()
 
-                def collect(response: Any) -> None:
-                    try:
-                        response_headers = response.headers
-                        mime = str(response_headers.get("content-type") or "")
-                        resource_type = str(response.request.resource_type or "")
-                        candidate_url = str(response.url or "")
-                        content_range = str(response_headers.get("content-range") or "")
-                        content_length = str(response_headers.get("content-length") or "0")
-                        size_match = re.search(r"/(\d+)$", content_range)
-                        size = int(size_match.group(1)) if size_match else int(content_length or 0)
-                        if resource_type == "media" or mime.startswith(("video/", "audio/")):
-                            candidates.append(
-                                {
-                                    "url": candidate_url,
-                                    "mime": mime,
-                                    "size": size,
-                                    "resource_type": resource_type,
-                                }
-                            )
-                    except Exception:
-                        return
-
-                page.on("response", collect)
-                page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_seconds * 1000)
-                page.wait_for_timeout(3000)
-                for element in page.locator("video").all():
-                    try:
-                        element.evaluate("el => { el.muted = true; el.play().catch(() => {}); return true; }")
-                    except PlaywrightError:
-                        continue
-                page.wait_for_timeout(15000)
-                final_url = page.url
-                validate_supported_url(final_url)
-                title = page.title()
-                for selector in ('meta[property="og:title"]', 'meta[name="twitter:title"]'):
-                    try:
-                        value = page.locator(selector).first.get_attribute("content", timeout=1000)
-                        if value:
-                            title = value.strip()
-                            break
-                    except PlaywrightError:
-                        continue
-                try:
-                    page_text = page.locator("body").inner_text(timeout=5000)
-                except PlaywrightError:
-                    page_text = ""
-                for element in page.locator("video, audio").all():
-                    try:
-                        item = element.evaluate(
-                            "el => ({url: el.currentSrc || el.src || '', "
-                            "mime: el.tagName.toLowerCase(), duration: Number(el.duration || 0)})"
-                        )
-                        if item and item.get("url"):
-                            candidates.append(
-                                {"url": str(item["url"]), "mime": str(item.get("mime") or ""), "size": 0}
-                            )
+                    def collect(response: Any) -> None:
                         try:
-                            duration = float(item.get("duration") or 0)
-                            if duration > 0:
-                                element_durations.append(duration)
-                        except (TypeError, ValueError, AttributeError):
-                            pass
+                            response_headers = response.headers
+                            mime = str(response_headers.get("content-type") or "")
+                            resource_type = str(response.request.resource_type or "")
+                            candidate_url = str(response.url or "")
+                            content_range = str(response_headers.get("content-range") or "")
+                            content_length = str(response_headers.get("content-length") or "0")
+                            size_match = re.search(r"/(\d+)$", content_range)
+                            size = int(size_match.group(1)) if size_match else int(content_length or 0)
+                            if resource_type == "media" or mime.startswith(("video/", "audio/")):
+                                candidates.append(
+                                    {
+                                        "url": candidate_url,
+                                        "mime": mime,
+                                        "size": size,
+                                        "resource_type": resource_type,
+                                    }
+                                )
+                        except Exception:
+                            return
+
+                    page.on("response", collect)
+                    page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_seconds * 1000)
+                    page.wait_for_timeout(3000)
+                    for element in page.locator("video").all():
+                        try:
+                            element.evaluate(
+                                "el => { el.muted = true; el.play().catch(() => {}); return true; }"
+                            )
+                        except PlaywrightError:
+                            continue
+                    page.wait_for_timeout(15000)
+                    final_url = page.url
+                    validate_supported_url(final_url)
+                    title = page.title()
+                    for selector in ('meta[property="og:title"]', 'meta[name="twitter:title"]'):
+                        try:
+                            value = page.locator(selector).first.get_attribute("content", timeout=1000)
+                            if value:
+                                title = value.strip()
+                                break
+                        except PlaywrightError:
+                            continue
+                    try:
+                        page_text = page.locator("body").inner_text(timeout=5000)
                     except PlaywrightError:
-                        continue
-                cookies = context.cookies()
-                user_agent = page.evaluate("navigator.userAgent") or USER_AGENT
-                browser.close()
+                        page_text = ""
+                    for element in page.locator("video, audio").all():
+                        try:
+                            item = element.evaluate(
+                                "el => ({url: el.currentSrc || el.src || '', "
+                                "mime: el.tagName.toLowerCase(), duration: Number(el.duration || 0)})"
+                            )
+                            if item and item.get("url"):
+                                candidates.append(
+                                    {"url": str(item["url"]), "mime": str(item.get("mime") or ""), "size": 0}
+                                )
+                            try:
+                                duration = float(item.get("duration") or 0)
+                                if duration > 0:
+                                    element_durations.append(duration)
+                            except (TypeError, ValueError, AttributeError):
+                                pass
+                        except PlaywrightError:
+                            continue
+                    cookies = context.cookies()
+                    user_agent = page.evaluate("navigator.userAgent") or USER_AGENT
+                finally:
+                    if context is not None:
+                        try:
+                            context.close()
+                        except PlaywrightError:
+                            pass
+                    if browser is not None:
+                        try:
+                            browser.close()
+                        except PlaywrightError:
+                            pass
         except (PlaywrightError, OSError) as exc:
             raise AcquisitionError("BROWSER_FAILED", f"浏览器获取失败：{exc}", adapter=self.name) from exc
 
@@ -520,6 +665,7 @@ class PlaywrightAdapter:
         if cookie_header:
             headers["Cookie"] = cookie_header
         downloaded: List[Dict[str, Any]] = []
+        exceeded_limit = False
         maximum_size = max((int(item.get("size") or 0) for item in deduped), default=0)
         for candidate_index, item in ranked:
             size = int(item.get("size") or 0)
@@ -540,6 +686,8 @@ class PlaywrightAdapter:
                 )
                 probe = _probe_media(candidate_path)
             except (AcquisitionError, OSError) as exc:
+                if isinstance(exc, AcquisitionError) and exc.error_type == "INPUT_TOO_LARGE":
+                    exceeded_limit = True
                 diagnostics[candidate_index]["download_error"] = str(exc)[-500:]
                 candidate_path.unlink(missing_ok=True)
                 continue
@@ -553,6 +701,12 @@ class PlaywrightAdapter:
         )
         videos = [item for item in downloaded if item["probe"]["has_video"]]
         if not videos:
+            if exceeded_limit:
+                raise AcquisitionError(
+                    "INPUT_TOO_LARGE",
+                    f"浏览器捕获的媒体超过大小上限 {self.max_bytes} 字节",
+                    adapter=self.name,
+                )
             raise AcquisitionError("MEDIA_NOT_FOUND", "捕获到的候选文件中没有真实视频轨道", adapter=self.name)
         video_item = max(
             videos,
@@ -593,6 +747,13 @@ class PlaywrightAdapter:
                     if completed.returncode == 0:
                         output_path = merged
                         final_probe = _probe_media(merged)
+
+        if output_path.stat().st_size > self.max_bytes:
+            raise AcquisitionError(
+                "INPUT_TOO_LARGE",
+                f"浏览器获取的最终媒体超过大小上限 {self.max_bytes} 字节",
+                adapter=self.name,
+            )
 
         expected_duration = _declared_duration(page_text, element_durations)
         actual_duration = float(final_probe.get("duration") or 0)
@@ -661,7 +822,18 @@ class SourceRouter:
 def default_adapters(config: Optional[Dict[str, Any]] = None) -> List[Any]:
     acquisition = (config or {}).get("acquisition", {}) if isinstance(config, dict) else {}
     cookie_browser = str(acquisition.get("cookie_browser") or "")
-    adapters: List[Any] = [YtDlpAdapter(cookie_browser=cookie_browser)]
+    raw_profile_dir = str(acquisition.get("browser_profile_dir") or "").strip()
+    profile_dir = Path(raw_profile_dir).expanduser().resolve() if raw_profile_dir else None
+    max_download_mb = float(acquisition.get("max_download_mb", 2048))
+    if max_download_mb <= 0:
+        raise ValueError("acquisition.max_download_mb 必须大于 0")
+    adapters: List[Any] = [YtDlpAdapter(cookie_browser=cookie_browser, max_download_mb=max_download_mb)]
     if acquisition.get("browser_fallback", True):
-        adapters.append(PlaywrightAdapter(headless=bool(acquisition.get("browser_headless", False))))
+        adapters.append(
+            PlaywrightAdapter(
+                headless=bool(acquisition.get("browser_headless", False)),
+                max_download_mb=max_download_mb,
+                profile_dir=profile_dir,
+            )
+        )
     return adapters

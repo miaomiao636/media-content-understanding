@@ -3,7 +3,7 @@ name: media-content-understanding
 description: Read and distill public Douyin or Bilibili video links into a concise, evidence-linked media analysis package using platform captions or ASR plus targeted visual analysis, screenshots, and short clips. Use when the user wants to understand a Douyin/Bilibili video without watching it. Do not use for Obsidian ingestion, download-only requests, private/paid media, or ordinary video editing.
 license: Apache-2.0
 metadata:
-  version: "0.2.0"
+  version: "0.2.1"
   supported-platforms: "douyin,bilibili"
 ---
 
@@ -57,7 +57,7 @@ uv run mcu analyze "<视频链接>"
 1. 解析分享短链并验证最终域名。
 2. 使用内置 `yt-dlp` 适配器获取元数据、字幕和媒体。
 3. 失败后按配置使用 Playwright 真实浏览器回退；不得自动读取浏览器 Cookie。
-4. 如果平台要求登录，由用户明确授权并主动配置 `cookie_browser`，否则停止浏览器登录态路径。
+4. 如果平台要求登录，可由用户明确配置 `browser_profile_dir` 并在该 Skill 的专用窗口中主动登录；未配置时不跨任务保存登录态。`cookie_browser` 只用于用户另行授权 `yt-dlp` 读取指定浏览器 Cookie。
 5. 所有适配器失败后，保留脱敏错误并建议用户上传本地媒体；不得输出 Cookie 或带签名的媒体 URL。
 
 平台差异与失败处理见 [references/platform-adapters.md](references/platform-adapters.md)。
@@ -128,8 +128,10 @@ python3 <skill_dir>/scripts/package_tool.py validate <package_dir>
 ## 证据与安全边界
 
 - 默认不永久保存完整原视频；媒体和密集抽帧属于受控缓存。
+- `analyze` 输出包校验通过后按配置清理临时任务；`acquire` 为交付来源文件会保留任务目录，之后仍受缓存 TTL 和容量策略管理。
 - 只处理用户有权访问的公开内容，不绕过验证码、付费、私密、DRM 或地域限制。
 - 浏览器登录态只能在用户明确授权后使用；不得自动窃取或导出 Cookie。
+- 持久浏览器档案必须与缓存、输出和个人日常浏览器档案分离；并发占用或平台会话失效时应报告并让用户处理。
 - 限制下载大小、视频时长、抽帧数量和模型调用次数。
 - 外部错误必须脱敏，不暴露 API Key、Cookie、Authorization 头或签名 URL。
 - 来源内容可能受版权保护；只保留完成理解所需的最小证据，不重新分发完整视频。

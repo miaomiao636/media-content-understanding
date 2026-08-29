@@ -10,28 +10,81 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 try:
     from .asr_router import TranscriptionError, TranscriptResult, TranscriptSegment, get_transcript
+    from .cleanup import clean_cache, ensure_managed_root, finish_job, register_job
     from .config_loader import load_config
     from .console import configure_utf8_stdio
-    from .source_adapter import AcquiredSource, AcquisitionError, SourceRouter, default_adapters
+    from .source_adapter import (
+        AcquiredSource,
+        AcquisitionError,
+        SourceRouter,
+        browser_profile_contains_project,
+        default_adapters,
+        is_managed_browser_profile,
+    )
 except ImportError:
     from asr_router import TranscriptionError, TranscriptResult, TranscriptSegment, get_transcript
+    from cleanup import clean_cache, ensure_managed_root, finish_job, register_job
     from config_loader import load_config
     from console import configure_utf8_stdio
-    from source_adapter import AcquiredSource, AcquisitionError, SourceRouter, default_adapters
+    from source_adapter import (
+        AcquiredSource,
+        AcquisitionError,
+        SourceRouter,
+        browser_profile_contains_project,
+        default_adapters,
+        is_managed_browser_profile,
+    )
 
 
 configure_utf8_stdio()
 
 HERE = Path(__file__).resolve().parent
-SKILL_ROOT = HERE.parent
-ROOT_MARKER = ".media-content-understanding-managed"
-JOB_MARKER = ".job-managed"
+
+
+@dataclass(frozen=True)
+class AnalyzeOptions:
+    asr_mode: str
+    asr_model: str
+    language: str
+    storyboard_interval: float
+    max_frames: int
+
+
+def resolve_analyze_options(args: argparse.Namespace, config: Dict[str, Any]) -> AnalyzeOptions:
+    """Resolve CLI overrides over user configuration and built-in defaults."""
+    asr_config = config.get("asr", {}) if isinstance(config.get("asr"), dict) else {}
+    vision_config = config.get("vision", {}) if isinstance(config.get("vision"), dict) else {}
+    asr_mode = str(args.asr if args.asr is not None else asr_config.get("mode", "auto"))
+    if asr_mode not in {"auto", "local", "none"}:
+        raise ValueError(f"未知 ASR 模式：{asr_mode}")
+    asr_model = str(
+        args.asr_model if args.asr_model is not None else asr_config.get("local_model", "small")
+    ).strip()
+    if not asr_model:
+        raise ValueError("ASR 模型名不能为空")
+    language = str(args.language if args.language is not None else asr_config.get("language", "zh")).strip()
+    if not language:
+        raise ValueError("ASR 语言不能为空")
+    storyboard_interval = float(args.storyboard_interval if args.storyboard_interval is not None else 30.0)
+    max_frames = int(args.max_frames if args.max_frames is not None else vision_config.get("max_frames", 20))
+    if storyboard_interval <= 0:
+        raise ValueError("--storyboard-interval 必须大于 0")
+    if max_frames <= 0:
+        raise ValueError("--max-frames 必须大于 0")
+    return AnalyzeOptions(
+        asr_mode=asr_mode,
+        asr_model=asr_model,
+        language=language,
+        storyboard_interval=storyboard_interval,
+        max_frames=max_frames,
+    )
 
 
 def now_iso() -> str:
@@ -61,22 +114,29 @@ def run_helper(
 
 
 def ensure_cache_root(config: Dict[str, Any]) -> Path:
-    root = Path(config["paths"]["temp_root"]).expanduser().resolve()
-    output_root = Path(config["paths"]["output_root"]).expanduser().resolve()
-    if root in {Path(root.anchor), Path.home().resolve(), output_root}:
-        raise ValueError(f"不安全的缓存目录：{root}")
-    root.mkdir(parents=True, exist_ok=True)
-    marker = root / ROOT_MARKER
-    if not marker.exists():
-        marker.write_text("managed cache root\n", encoding="utf-8")
-    return root
+    return ensure_managed_root(config)
 
 
 def create_job(config: Dict[str, Any], platform_hint: str = "media") -> Path:
     root = ensure_cache_root(config)
+    clean_cache(config, apply=True)
     job = Path(tempfile.mkdtemp(prefix=f"job-{platform_hint}-", dir=str(root))).resolve()
-    (job / JOB_MARKER).write_text(now_iso() + "\n", encoding="utf-8")
-    return job
+    return register_job(config, job)
+
+
+def finalize_job(
+    config: Dict[str, Any], job: Path, *, success: bool, retain_success: bool = False
+) -> Dict[str, Any]:
+    """Finish retention without allowing cleanup failures to hide the analysis result."""
+    try:
+        return finish_job(config, job, success=success, retain_success=retain_success)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return {
+            "retained": job.exists(),
+            "reason": "retention_error",
+            "path": str(job),
+            "error": str(exc),
+        }
 
 
 def write_json(path: Path, payload: Any) -> None:
@@ -451,9 +511,23 @@ def update_manifest(
 
 def analyze(args: argparse.Namespace) -> int:
     config, _ = load_config(args.config)
+    options = resolve_analyze_options(args, config)
     if args.output_root:
         config["paths"]["output_root"] = str(Path(args.output_root).expanduser().resolve())
     job = create_job(config)
+    try:
+        return analyze_job(args, config, options, job)
+    except BaseException:
+        finalize_job(config, job, success=False)
+        raise
+
+
+def analyze_job(
+    args: argparse.Namespace,
+    config: Dict[str, Any],
+    options: AnalyzeOptions,
+    job: Path,
+) -> int:
     errors: List[Dict[str, Any]] = []
     try:
         router = SourceRouter(default_adapters(config))
@@ -462,6 +536,7 @@ def analyze(args: argparse.Namespace) -> int:
         write_json(
             job / "errors.json", [{"stage": "acquisition", "type": exc.error_type, "message": str(exc)}]
         )
+        retention = finalize_job(config, job, success=False)
         print(
             json.dumps(
                 {
@@ -470,6 +545,8 @@ def analyze(args: argparse.Namespace) -> int:
                     "error": exc.error_type,
                     "message": str(exc),
                     "job": str(job),
+                    "job_retained": retention["retained"],
+                    "job_retention_reason": retention["reason"],
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -479,9 +556,18 @@ def analyze(args: argparse.Namespace) -> int:
     errors.extend(acquisition_errors(source))
     media_path = Path(source.media_path or "")
     if not media_path.is_file():
+        retention = finalize_job(config, job, success=False)
         print(
             json.dumps(
-                {"ok": False, "error": "MEDIA_NOT_FOUND", "job": str(job)}, ensure_ascii=False, indent=2
+                {
+                    "ok": False,
+                    "error": "MEDIA_NOT_FOUND",
+                    "job": str(job),
+                    "job_retained": retention["retained"],
+                    "job_retention_reason": retention["reason"],
+                },
+                ensure_ascii=False,
+                indent=2,
             )
         )
         return 2
@@ -493,9 +579,9 @@ def analyze(args: argparse.Namespace) -> int:
             [Path(path) for path in source.subtitle_paths],
             media_path,
             job,
-            mode=args.asr,
-            model_name=args.asr_model,
-            language=args.language,
+            mode=options.asr_mode,
+            model_name=options.asr_model,
+            language=options.language,
         )
     except TranscriptionError as exc:
         limitations.append(str(exc))
@@ -527,10 +613,10 @@ def analyze(args: argparse.Namespace) -> int:
         if transcript is not None:
             limitations.append("平台字幕和本地 ASR 不可用，本次采用外部原生视频模型分段生成音画转写。")
 
-    interval = args.storyboard_interval
+    interval = options.storyboard_interval
     frames: List[Path] = []
     try:
-        frames = make_storyboard(media_path, job, interval, args.max_frames)
+        frames = make_storyboard(media_path, job, interval, options.max_frames)
     except RuntimeError as exc:
         limitations.append(str(exc))
         errors.append(
@@ -580,12 +666,15 @@ def analyze(args: argparse.Namespace) -> int:
         valid = bool(json.loads(validation.stdout).get("ok"))
     except json.JSONDecodeError:
         valid = False
+    retention = finalize_job(config, job, success=valid)
     result = {
         "ok": valid,
         "status": json.loads((package_dir / "manifest.json").read_text(encoding="utf-8"))["status"],
         "platform": source.platform,
         "package_dir": str(package_dir),
-        "job_dir": str(job),
+        "job_dir": str(job) if retention["retained"] else None,
+        "job_retained": retention["retained"],
+        "job_retention_reason": retention["reason"],
         "acquisition_method": source.acquisition_method,
         "transcription_method": transcript.method if transcript else "unavailable",
         "vision_status": vision_report.get("status") if vision_report else "host-agent-required",
@@ -593,6 +682,8 @@ def analyze(args: argparse.Namespace) -> int:
         if validation.stdout.strip().startswith("{")
         else validation.stderr,
     }
+    if retention.get("error"):
+        result["retention_error"] = retention["error"]
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if valid else 3
 
@@ -634,21 +725,154 @@ def doctor(args: argparse.Namespace) -> int:
     return 0 if payload.get("ok") else 2
 
 
-def acquire_only(args: argparse.Namespace) -> int:
+def _configured_browser_profile(config: Dict[str, Any]) -> Optional[Path]:
+    raw = str(config.get("acquisition", {}).get("browser_profile_dir") or "").strip()
+    if not raw:
+        return None
+    profile = Path(raw).expanduser().resolve()
+
+    def contains(parent: Path, child: Path) -> bool:
+        try:
+            child.relative_to(parent)
+            return True
+        except ValueError:
+            return False
+
+    if profile in {Path(profile.anchor), Path.home().resolve()}:
+        raise ValueError("专用浏览器档案不能是文件系统根目录或用户主目录")
+    for path in (
+        Path(config["paths"]["temp_root"]).resolve(),
+        Path(config["paths"]["output_root"]).resolve(),
+    ):
+        if contains(profile, path) or contains(path, profile):
+            raise ValueError(f"专用浏览器档案必须与受保护目录完全分离：{path}")
+    return profile
+
+
+def browser_profile(args: argparse.Namespace) -> int:
     config, _ = load_config(args.config)
-    job = Path(args.work_dir).expanduser().resolve() if args.work_dir else create_job(config)
-    try:
-        source = SourceRouter(default_adapters(config)).acquire(args.url, job)
-    except AcquisitionError as exc:
+    profile = _configured_browser_profile(config)
+    if profile is None:
         print(
             json.dumps(
-                {"ok": False, "error": exc.error_type, "message": str(exc), "job": str(job)},
+                {
+                    "ok": args.profile_action == "status",
+                    "configured": False,
+                    "message": "尚未配置 acquisition.browser_profile_dir",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0 if args.profile_action == "status" else 2
+    if profile.is_symlink():
+        raise ValueError("专用浏览器档案目录不能是符号链接")
+    if profile.exists() and not profile.is_dir():
+        raise ValueError("专用浏览器档案路径不是目录")
+    if args.profile_action == "status":
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "configured": True,
+                    "path": str(profile),
+                    "exists": profile.is_dir(),
+                    "managed": profile.is_dir() and is_managed_browser_profile(profile),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    if not profile.exists():
+        print(
+            json.dumps(
+                {"ok": True, "configured": True, "path": str(profile), "deleted": False},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    if browser_profile_contains_project(profile) or not is_managed_browser_profile(profile):
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "configured": True,
+                    "path": str(profile),
+                    "deleted": False,
+                    "error": "UNMANAGED_BROWSER_PROFILE",
+                    "message": "拒绝删除：目录缺少本 Skill 的有效管理标记，或看起来是项目目录",
+                },
                 ensure_ascii=False,
                 indent=2,
             )
         )
         return 2
-    print(json.dumps({"ok": True, "job": str(job), "source": source.to_json()}, ensure_ascii=False, indent=2))
+    if not args.yes:
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "configured": True,
+                    "path": str(profile),
+                    "deleted": False,
+                    "confirmation_required": True,
+                    "message": "重新运行并添加 --yes 才会清除该专用登录档案",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    shutil.rmtree(profile)
+    print(
+        json.dumps(
+            {"ok": True, "configured": True, "path": str(profile), "deleted": True},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
+def acquire_only(args: argparse.Namespace) -> int:
+    config, _ = load_config(args.config)
+    managed_job = not bool(args.work_dir)
+    job = Path(args.work_dir).expanduser().resolve() if args.work_dir else create_job(config)
+    try:
+        source = SourceRouter(default_adapters(config)).acquire(args.url, job)
+    except AcquisitionError as exc:
+        retention = finalize_job(config, job, success=False) if managed_job else None
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": exc.error_type,
+                    "message": str(exc),
+                    "job": str(job),
+                    "job_managed": managed_job,
+                    "job_retention_reason": retention["reason"] if retention else "user_work_dir",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 2
+    retention = finalize_job(config, job, success=True, retain_success=True) if managed_job else None
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "job": str(job),
+                "job_managed": managed_job,
+                "job_retention_reason": retention["reason"] if retention else "user_work_dir",
+                "source": source.to_json(),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -660,6 +884,14 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser = sub.add_parser("doctor", help="检查公共版运行环境")
     doctor_parser.set_defaults(func=doctor)
 
+    profile_parser = sub.add_parser("browser-profile", help="查看或清除专用浏览器登录档案")
+    profile_sub = profile_parser.add_subparsers(dest="profile_action", required=True)
+    profile_status = profile_sub.add_parser("status", help="查看专用浏览器档案状态")
+    profile_status.set_defaults(func=browser_profile, yes=False)
+    profile_reset = profile_sub.add_parser("reset", help="清除专用浏览器登录状态")
+    profile_reset.add_argument("--yes", action="store_true", help="确认删除配置的专用档案目录")
+    profile_reset.set_defaults(func=browser_profile)
+
     acquire_parser = sub.add_parser("acquire", help="只获取并规范化来源")
     acquire_parser.add_argument("url")
     acquire_parser.add_argument("--work-dir")
@@ -669,12 +901,12 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_parser.add_argument("url")
     analyze_parser.add_argument("--focus", default="")
     analyze_parser.add_argument("--output-root")
-    analyze_parser.add_argument("--asr", choices=["auto", "local", "none"], default="auto")
-    analyze_parser.add_argument("--asr-model", default="small")
-    analyze_parser.add_argument("--language", default="zh")
+    analyze_parser.add_argument("--asr", choices=["auto", "local", "none"])
+    analyze_parser.add_argument("--asr-model")
+    analyze_parser.add_argument("--language")
     analyze_parser.add_argument("--vision", choices=["auto", "none"], default="auto")
-    analyze_parser.add_argument("--storyboard-interval", type=float, default=30.0)
-    analyze_parser.add_argument("--max-frames", type=int, default=20)
+    analyze_parser.add_argument("--storyboard-interval", type=float)
+    analyze_parser.add_argument("--max-frames", type=int)
     analyze_parser.set_defaults(func=analyze)
     return parser
 
