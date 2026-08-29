@@ -151,6 +151,8 @@ def extract_audio(media_path: Path, output_path: Path) -> Path:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if completed.returncode:

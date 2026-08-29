@@ -36,7 +36,14 @@ def parse_time(value: str) -> float:
 
 
 def run(command: list) -> None:
-    completed = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    completed = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     if completed.returncode:
         tail = completed.stderr[-3000:]
         raise RuntimeError(f"媒体处理失败：{tail}")
@@ -90,6 +97,8 @@ def main() -> int:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
             if completed.returncode:
                 raise RuntimeError(completed.stderr[-3000:])

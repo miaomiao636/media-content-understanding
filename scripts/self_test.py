@@ -20,7 +20,14 @@ HERE = Path(__file__).resolve().parent
 
 
 def run(command, expected=(0,)):
-    completed = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    completed = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     if completed.returncode not in expected:
         raise AssertionError(
             f"命令失败 {completed.returncode}: {' '.join(map(str, command))}\n{completed.stdout}\n{completed.stderr}"
