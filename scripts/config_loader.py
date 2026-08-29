@@ -116,6 +116,13 @@ def validate_config(config: Dict[str, Any]) -> None:
     for key in ("max_visual_calls", "max_frames", "max_upload_mb"):
         if _number(config, "vision", key) <= 0:
             raise ValueError(f"vision.{key} 必须大于 0")
+    for key in ("max_visual_calls", "max_frames"):
+        value = _number(config, "vision", key)
+        if not value.is_integer():
+            raise ValueError(f"vision.{key} 必须是整数")
+    verification_mode = str(config["vision"].get("verification_mode", "low-confidence"))
+    if verification_mode not in {"none", "low-confidence"}:
+        raise ValueError(f"vision.verification_mode 无效：{verification_mode}")
 
 
 def load_config(explicit: Optional[str] = None) -> Tuple[Dict[str, Any], Optional[Path]]:

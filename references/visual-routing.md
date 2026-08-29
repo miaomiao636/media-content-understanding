@@ -14,7 +14,8 @@
 3. 按 `priority` 升序调用。
 4. 认证和配置错误不重试；超时、网络、429 和 5xx 按配置重试。
 5. 空响应或无法解析的响应重试一次后切换。
-6. 第一个有效结果作为主结果；低置信度时可让下一模型复核。
+6. 第一个有效结果作为主结果；结果明确带有结构化 `low` 置信度标记时，让下一模型基于同一证据复核。
+7. 转写、摘要、重试、故障切换和复核共享 `vision.max_visual_calls` 预算，每次 provider 尝试扣减一次。
 
 建议使用：
 
@@ -26,6 +27,8 @@ python3 <skill_dir>/scripts/vision_router.py \
   --output visual-analysis.md \
   --report vision-report.json
 ```
+
+独立调用时可用 `--max-api-calls N` 进一步缩小本进程预算。报告中的 `api_calls_limit`、`api_calls_used` 和 `budget_exhausted` 可供上层工作流继续分配预算。`mcu analyze --config PATH` 会把同一配置路径传给全部视觉子流程。
 
 原生视频：
 
@@ -41,7 +44,7 @@ python3 <skill_dir>/scripts/vision_router.py \
 
 ## 原生视频与关键帧选择
 
-- 媒体在 provider 的 Base64 限制内时，可直接发送本地视频以同时理解画面、声音和时间关系。
+- 媒体同时满足 provider 单项 Base64 限制和 `vision.max_upload_mb` 单次合计限制时，可直接发送本地视频以同时理解画面、声音和时间关系。
 - 来源已公开且直链稳定时可使用视频 URL；不要为了调用模型擅自公开本地或私密视频。
 - 视频过大、超时、格式不支持或不需要音频时，降级为“ASR + 关键帧/连续帧”。
 - 原生视频理解结果不代替证据保存；仍按需要输出截图或短片，并记录时间点。

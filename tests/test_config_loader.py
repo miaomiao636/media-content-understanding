@@ -89,7 +89,9 @@ def test_browser_profile_rejects_unsafe_overlap(tmp_path, location):
         {"retention": {"max_cache_gb": 0}},
         {"vision": {"max_frames": 0}},
         {"vision": {"max_visual_calls": 0}},
+        {"vision": {"max_visual_calls": 1.5}},
         {"vision": {"max_upload_mb": 0}},
+        {"vision": {"verification_mode": "always"}},
     ],
 )
 def test_invalid_runtime_limits_are_rejected(tmp_path, override):

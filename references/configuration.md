@@ -82,6 +82,22 @@ uv run mcu browser-profile reset --yes
 
 ## 视觉模型字段
 
+### 全局视觉字段
+
+| 字段 | 实际行为 |
+| --- | --- |
+| `vision.max_visual_calls` | 一次 `mcu analyze` 的共享 provider 尝试预算；原生视频转写、重试、故障切换、最终摘要和低置信度复核都计入 |
+| `vision.max_upload_mb` | 单次请求中所有本地 Base64 媒体的合计上限；HTTP(S) 公网 URL 不计入本地上传量 |
+| `vision.verification_mode` | `none` 或 `low-confidence`；后者只响应结构化 `MCU_CONFIDENCE: low` 标记 |
+| `vision.max_frames` | 故事板最多抽取的帧数；最终单次视觉综合当前最多选择前 12 帧 |
+| `vision.host_fallback` | 外部链无可用结果时，是否允许宿主 Agent 按 Skill 说明接管视觉检查 |
+
+`max_visual_calls` 采用保守计数：每次进入一个 provider 的调用尝试就扣减一次，包括认证、配置、上传限制或网络错误导致的失败尝试。原生视频转写会至少为最终故事板摘要保留一次尝试；复核使用剩余预算，不能挤占总上限。视觉子进程若未能写出可信的用量报告，主流程会耗尽本次剩余预算，防止错误后继续产生不可控调用。
+
+`max_upload_mb` 与 provider 限制同时生效：全局限制约束一批媒体的 Base64 合计；`max_image_base64_mb` 和 `max_video_base64_mb` 分别约束单个媒体项。实际允许值取两层约束共同满足的范围。
+
+### Provider 字段
+
 | 字段 | 含义 |
 | --- | --- |
 | `id` | 当前配置内唯一名称，用于报错和审计 |
@@ -112,5 +128,7 @@ uv run mcu browser-profile reset --yes
 
 - 外部视觉模型按优先级先于宿主模型。
 - 只选择能力匹配的模型。
-- 第一个产生有效结构化结果的模型即为主结果。
-- `verification_mode=low-confidence` 时，只在结果不确定或互相矛盾时调用第二模型复核。
+- 第一个产生有效结果的模型即为主结果。
+- 主流程提示模型在末尾返回 `<!-- MCU_CONFIDENCE: high|medium|low -->`；该标记写入报告，但会从用户正文中移除。
+- `verification_mode=low-confidence` 时，只有主结果明确返回 `low` 才调用下一可用模型复核；缺少标记记为 `unknown`，不会仅凭自由文本猜测置信度。
+- 第二模型需要基于同一媒体证据输出可直接替换的完整结果；复核失败时保留已成功的主结果，并在报告中记录失败链。

@@ -57,6 +57,56 @@ class AnalyzeOptions:
     max_frames: int
 
 
+@dataclass
+class VisualCallBudget:
+    """Shared conservative budget across transcription, summary, retries and failover."""
+
+    limit: int
+    used: int = 0
+
+    def __post_init__(self) -> None:
+        if self.limit <= 0:
+            raise ValueError("vision.max_visual_calls 必须大于 0")
+
+    @property
+    def remaining(self) -> int:
+        return max(0, self.limit - self.used)
+
+    def consume_report(self, report: Dict[str, Any]) -> None:
+        if "api_calls_used" not in report:
+            self.used = self.limit
+            return
+        try:
+            calls = int(report["api_calls_used"])
+        except (TypeError, ValueError):
+            self.used = self.limit
+            return
+        if calls < 0:
+            self.used = self.limit
+            return
+        self.used = min(self.limit, self.used + calls)
+
+    def exhaust_unknown(self) -> None:
+        """Prevent further calls when a child may have called providers but did not report usage."""
+        self.used = self.limit
+
+    def snapshot(self) -> Dict[str, int]:
+        return {"limit": self.limit, "used": self.used, "remaining": self.remaining}
+
+
+def vision_router_command(
+    config_path: Optional[Path], budget: VisualCallBudget, *, max_calls: Optional[int] = None
+) -> List[str]:
+    command = [sys.executable, str(HERE / "vision_router.py")]
+    if config_path is not None:
+        command.extend(["--config", str(config_path)])
+    allowed = budget.remaining if max_calls is None else min(budget.remaining, max_calls)
+    if allowed <= 0:
+        raise ValueError("视觉调用预算已经耗尽")
+    command.extend(["--max-api-calls", str(allowed)])
+    return command
+
+
 def resolve_analyze_options(args: argparse.Namespace, config: Dict[str, Any]) -> AnalyzeOptions:
     """Resolve CLI overrides over user configuration and built-in defaults."""
     asr_config = config.get("asr", {}) if isinstance(config.get("asr"), dict) else {}
@@ -259,7 +309,8 @@ def transcribe_with_video_provider(
     job: Path,
     *,
     duration: Optional[float],
-    max_segments: int,
+    budget: VisualCallBudget,
+    config_path: Optional[Path],
 ) -> Optional[TranscriptResult]:
     """Use configured native-video providers when captions and local ASR are unavailable."""
     ffmpeg = shutil.which("ffmpeg")
@@ -268,12 +319,15 @@ def transcribe_with_video_provider(
     total = duration or media_duration(media_path)
     segment_seconds = 180.0
     needed = max(1, int((total + segment_seconds - 1) // segment_seconds))
-    if needed > max_segments:
+    if needed + 1 > budget.remaining:
         return None
     segment_dir = job / "video-transcription"
     segment_dir.mkdir(parents=True, exist_ok=True)
     results: List[TranscriptSegment] = []
     for index in range(needed):
+        calls_for_current_segment = budget.remaining - (needed - index - 1) - 1
+        if calls_for_current_segment <= 0:
+            return None
         start = index * segment_seconds
         length = min(segment_seconds, max(0.0, total - start))
         if length <= 0:
@@ -328,11 +382,12 @@ def transcribe_with_video_provider(
             "同时听取音频并查看画面。按相对当前片段的时间戳忠实转写中文讲话，听不清处标记；"
             "随后列出画面中直接可见的界面、代码、参数、图表和操作结果。"
             "不要把平台评论、导航或相关推荐当作视频正文。"
+            "最后单独追加置信度标记：<!-- MCU_CONFIDENCE: high|medium|low -->，"
+            "并将竖线中的值替换为唯一一个实际等级。"
         )
-        subprocess.run(
+        command = vision_router_command(config_path, budget, max_calls=calls_for_current_segment)
+        command.extend(
             [
-                sys.executable,
-                str(HERE / "vision_router.py"),
                 "--prompt",
                 prompt,
                 "--video",
@@ -341,7 +396,10 @@ def transcribe_with_video_provider(
                 str(output_path),
                 "--report",
                 str(report_path),
-            ],
+            ]
+        )
+        subprocess.run(
+            command,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -349,11 +407,16 @@ def transcribe_with_video_provider(
             timeout=600,
             check=False,
         )
-        if not report_path.exists() or not output_path.exists():
+        if not report_path.exists():
+            budget.exhaust_unknown()
             return None
         try:
             report = json.loads(report_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
+            budget.exhaust_unknown()
+            return None
+        budget.consume_report(report)
+        if not output_path.exists():
             return None
         if report.get("status") != "external_success":
             return None
@@ -425,9 +488,21 @@ def visual_summary(
     transcript: Optional[TranscriptResult],
     frames: Sequence[Path],
     focus: str,
+    *,
+    budget: VisualCallBudget,
+    config_path: Optional[Path],
 ) -> Optional[Dict[str, Any]]:
     if not frames:
         return None
+    if budget.remaining <= 0:
+        return {
+            "status": "external_budget_exhausted",
+            "api_calls_limit": 0,
+            "api_calls_used": 0,
+            "budget_exhausted": True,
+            "workflow_budget": budget.snapshot(),
+            "errors": [],
+        }
     transcript_text = transcript.markdown() if transcript else "没有可用转写，请主要依赖画面。"
     prompt = (
         "请根据视频的时间戳转写和按顺序抽取的故事板，生成中文 Markdown 内容提炼。\n"
@@ -435,22 +510,25 @@ def visual_summary(
         "画面直接可见的信息、合理推断、缺失信息、复刻前仍需验证的事项。"
         "不要把故事板中出现的平台评论、推荐或导航当作视频正文。"
         "需要引用画面时使用对应文件名，并说明画面作用。\n"
+        "最后单独追加置信度标记：<!-- MCU_CONFIDENCE: high|medium|low -->，"
+        "并将竖线中的值替换为唯一一个实际等级。\n"
         f"用户关注点：{focus or '完整理解视频内容'}\n\n"
         f"{transcript_text[:40000]}"
     )
     prompt_path = job / "summary-prompt.txt"
     prompt_path.write_text(prompt, encoding="utf-8")
     report = package_dir / "vision-report.json"
-    command = [
-        sys.executable,
-        str(HERE / "vision_router.py"),
+    command = vision_router_command(config_path, budget)
+    command.extend(
+        [
         "--prompt-file",
         str(prompt_path),
         "--output",
         str(package_dir / "summary.md"),
         "--report",
         str(report),
-    ]
+        ]
+    )
     for frame in frames[:12]:
         command.extend(["--image", str(frame)])
     subprocess.run(
@@ -465,9 +543,14 @@ def visual_summary(
     )
     if report.exists():
         try:
-            return json.loads(report.read_text(encoding="utf-8"))
+            payload = json.loads(report.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
+            budget.exhaust_unknown()
             return None
+        budget.consume_report(payload)
+        payload["workflow_budget"] = budget.snapshot()
+        return payload
+    budget.exhaust_unknown()
     return None
 
 
@@ -510,13 +593,13 @@ def update_manifest(
 
 
 def analyze(args: argparse.Namespace) -> int:
-    config, _ = load_config(args.config)
+    config, config_path = load_config(args.config)
     options = resolve_analyze_options(args, config)
     if args.output_root:
         config["paths"]["output_root"] = str(Path(args.output_root).expanduser().resolve())
     job = create_job(config)
     try:
-        return analyze_job(args, config, options, job)
+        return analyze_job(args, config, options, job, config_path=config_path)
     except BaseException:
         finalize_job(config, job, success=False)
         raise
@@ -527,8 +610,11 @@ def analyze_job(
     config: Dict[str, Any],
     options: AnalyzeOptions,
     job: Path,
+    *,
+    config_path: Optional[Path] = None,
 ) -> int:
     errors: List[Dict[str, Any]] = []
+    visual_budget = VisualCallBudget(int(config.get("vision", {}).get("max_visual_calls", 20)))
     try:
         router = SourceRouter(default_adapters(config))
         source = router.acquire(args.url, job)
@@ -599,13 +685,13 @@ def analyze_job(
         )
 
     if transcript is None and args.vision != "none":
-        max_segments = max(1, int(config.get("vision", {}).get("max_visual_calls", 20)) - 1)
         try:
             transcript = transcribe_with_video_provider(
                 media_path,
                 job,
                 duration=source.duration,
-                max_segments=max_segments,
+                budget=visual_budget,
+                config_path=config_path,
             )
         except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
             transcript = None
@@ -646,7 +732,17 @@ def analyze_job(
     media_rows = copy_storyboard(package_dir, frames, interval)
     (package_dir / "summary.md").write_text(draft_summary(transcript, source, limitations), encoding="utf-8")
     vision_report = (
-        visual_summary(package_dir, job, transcript, frames, args.focus) if args.vision != "none" else None
+        visual_summary(
+            package_dir,
+            job,
+            transcript,
+            frames,
+            args.focus,
+            budget=visual_budget,
+            config_path=config_path,
+        )
+        if args.vision != "none"
+        else None
     )
     if vision_report:
         for item in vision_report.get("errors") or []:
@@ -678,6 +774,7 @@ def analyze_job(
         "acquisition_method": source.acquisition_method,
         "transcription_method": transcript.method if transcript else "unavailable",
         "vision_status": vision_report.get("status") if vision_report else "host-agent-required",
+        "visual_call_budget": visual_budget.snapshot(),
         "validation": json.loads(validation.stdout)
         if validation.stdout.strip().startswith("{")
         else validation.stderr,

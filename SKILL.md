@@ -3,7 +3,7 @@ name: media-content-understanding
 description: Read and distill public Douyin or Bilibili video links into a concise, evidence-linked media analysis package using platform captions or ASR plus targeted visual analysis, screenshots, and short clips. Use when the user wants to understand a Douyin/Bilibili video without watching it. Do not use for Obsidian ingestion, download-only requests, private/paid media, or ordinary video editing.
 license: Apache-2.0
 metadata:
-  version: "0.2.1"
+  version: "0.2.2"
   supported-platforms: "douyin,bilibili"
 ---
 
@@ -96,8 +96,10 @@ CLI 会先生成稀疏故事板。Agent 必须复核故事板，只保留真正�
 
 1. 从配置中筛选已启用且能力匹配的外部模型，按 `priority` 升序调用。
 2. 单个模型失败时读取报告中的错误类型和建议，告诉用户后继续下一个模型。
-3. 外部模型全部失败后，宿主支持视觉则由宿主完成故事板检查。
-4. 宿主也不支持视觉，而内容又必须依赖画面时，将包标记为 `failed_visual` 或 `partial`，不得宣称完成。
+3. 原生视频转写、重试、故障切换、摘要和复核共享 `max_visual_calls`；不要绕过预算另行调用相同 provider。
+4. 主模型明确返回结构化低置信度标记时，按配置使用下一模型复核；标记会保留在报告而从用户正文中移除。
+5. 外部模型全部失败后，宿主支持视觉则由宿主完成故事板检查。
+6. 宿主也不支持视觉，而内容又必须依赖画面时，将包标记为 `failed_visual` 或 `partial`，不得宣称完成。
 
 千问和 MiMo 只是默认示例；公共 Skill 不强制任何特定服务商。密钥必须来自环境变量或系统密钥管理器，不得写入 Skill、配置模板、日志或测试数据。
 

@@ -18,9 +18,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from config_loader import load_config, provider_value
-from console import configure_utf8_stdio
-from credential_store import CredentialError, resolve_api_key
+try:
+    from .config_loader import load_config, provider_value
+    from .console import configure_utf8_stdio
+    from .credential_store import CredentialError, resolve_api_key
+except ImportError:
+    from config_loader import load_config, provider_value
+    from console import configure_utf8_stdio
+    from credential_store import CredentialError, resolve_api_key
 
 configure_utf8_stdio()
 
@@ -50,6 +55,9 @@ VIDEO_MIMES = {
     "video/x-flv",
     "video/x-ms-wmv",
 }
+CONFIDENCE_PATTERN = re.compile(
+    r"<!--\s*MCU_CONFIDENCE\s*:\s*(high|medium|low)\s*-->\s*$", re.IGNORECASE
+)
 
 
 class VisionCallError(Exception):
@@ -155,6 +163,40 @@ def encode_image(path: Path, provider: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def confidence_from_text(text: str) -> Optional[str]:
+    match = CONFIDENCE_PATTERN.search(text)
+    return match.group(1).lower() if match else None
+
+
+def strip_confidence_marker(text: str) -> str:
+    return CONFIDENCE_PATTERN.sub("", text).strip()
+
+
+def enforce_aggregate_upload_limit(content: List[Dict[str, Any]], limit_mb: float) -> None:
+    """Limit the combined Base64 media payload in one request.
+
+    Remote HTTP(S) URLs do not upload local bytes and therefore do not count here.
+    Provider-specific limits remain per media item in ``encode_file_data_url``.
+    """
+    encoded_bytes = 0
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        media = item.get("image_url") or item.get("video_url")
+        if not isinstance(media, dict):
+            continue
+        value = media.get("url")
+        if isinstance(value, str) and value.startswith("data:"):
+            encoded_bytes += len(value.encode("utf-8"))
+    encoded_mb = encoded_bytes / (1024 * 1024)
+    if encoded_mb > limit_mb:
+        raise VisionCallError(
+            "INPUT_TOO_LARGE",
+            f"本次请求的 Base64 媒体合计约 {encoded_mb:.1f} MB，"
+            f"超过 vision.max_upload_mb={limit_mb:.1f} MB",
+        )
+
+
 def validate_remote_url(value: str) -> str:
     parsed = urllib.parse.urlparse(value)
     if parsed.scheme not in {"http", "https", "data"}:
@@ -164,14 +206,28 @@ def validate_remote_url(value: str) -> str:
 
 def video_data_url(media: MediaInput, provider: Dict[str, Any]) -> str:
     if media.video_url:
-        return validate_remote_url(media.video_url)
+        value = validate_remote_url(media.video_url)
+        if value.startswith("data:"):
+            encoded_mb = len(value.encode("utf-8")) / (1024 * 1024)
+            limit = float(provider.get("max_video_base64_mb", 10))
+            if encoded_mb > limit:
+                raise VisionCallError(
+                    "INPUT_TOO_LARGE",
+                    f"Base64 视频约 {encoded_mb:.1f} MB，超过 provider 限制 {limit:.1f} MB",
+                )
+        return value
     if not media.video_path:
         raise VisionCallError("CONFIGURATION_ERROR", "缺少视频输入")
     limit = float(provider.get("max_video_base64_mb", 10))
     return encode_file_data_url(media.video_path, VIDEO_MIMES, limit)
 
 
-def build_content(provider: Dict[str, Any], prompt: str, media: MediaInput) -> List[Dict[str, Any]]:
+def build_content(
+    provider: Dict[str, Any],
+    prompt: str,
+    media: MediaInput,
+    max_upload_mb: Optional[float] = None,
+) -> List[Dict[str, Any]]:
     content: List[Dict[str, Any]] = []
     if media.kind in {"image", "multi_image"}:
         content.extend(encode_image(path, provider) for path in media.images)
@@ -186,6 +242,8 @@ def build_content(provider: Dict[str, Any], prompt: str, media: MediaInput) -> L
         content.append(item)
     else:
         raise VisionCallError("CONFIGURATION_ERROR", f"不支持的输入类型：{media.kind}")
+    if max_upload_mb is not None:
+        enforce_aggregate_upload_limit(content, max_upload_mb)
     content.append({"type": "text", "text": prompt})
     return content
 
@@ -195,6 +253,7 @@ def prepare_request(
     prompt: str,
     media: MediaInput,
     api_key: str,
+    max_upload_mb: Optional[float] = None,
 ) -> Tuple[Dict[str, str], Dict[str, Any], bool]:
     if provider.get("adapter") != "openai-compatible":
         raise VisionCallError("CONFIGURATION_ERROR", f"不支持 adapter：{provider.get('adapter')}")
@@ -205,7 +264,7 @@ def prepare_request(
     if not model:
         raise VisionCallError("CONFIGURATION_ERROR", "缺少 model")
 
-    content = build_content(provider, prompt, media)
+    content = build_content(provider, prompt, media, max_upload_mb)
     messages = [{"role": "user", "content": content}]
     headers = {"Content-Type": "application/json"}
     max_tokens = int(provider.get("max_output_tokens", 2000))
@@ -292,7 +351,13 @@ def parse_sse(response: Any) -> ProviderResult:
     return ProviderResult(text=text, model=model, usage=usage)
 
 
-def call_provider(provider: Dict[str, Any], prompt: str, media: MediaInput) -> ProviderResult:
+def call_provider(
+    provider: Dict[str, Any],
+    prompt: str,
+    media: MediaInput,
+    *,
+    max_upload_mb: Optional[float] = None,
+) -> ProviderResult:
     model = str(provider.get("model") or "")
     base_url = provider_value(provider, "base_url", "base_url_env").rstrip("/")
     if not model or not base_url:
@@ -307,7 +372,9 @@ def call_provider(provider: Dict[str, Any], prompt: str, media: MediaInput) -> P
     endpoint = str(provider.get("endpoint_path") or "/chat/completions")
     if not endpoint.startswith("/"):
         endpoint = "/" + endpoint
-    headers, body, streaming = prepare_request(provider, prompt, media, api_key)
+    headers, body, streaming = prepare_request(
+        provider, prompt, media, api_key, max_upload_mb=max_upload_mb
+    )
     timeout_key = "video_timeout_seconds" if media.kind == "video" else "timeout_seconds"
     timeout = float(provider.get(timeout_key, provider.get("timeout_seconds", 60)))
     request = urllib.request.Request(
@@ -355,6 +422,67 @@ def safe_usage(usage: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     return {key: value for key, value in usage.items() if key in allowed}
 
 
+def verification_prompt(original_prompt: str, primary_text: str) -> str:
+    return (
+        "你是第二视觉复核模型。请重新检查同一批媒体证据，核对并修正主模型输出。\n"
+        "重点检查数字、专有名词、界面文字、操作顺序，以及事实与推断是否混淆。\n"
+        "直接输出可替换主结果的完整中文答案，不要只写评语。\n"
+        "最后必须单独追加以下三个标记之一：\n"
+        "<!-- MCU_CONFIDENCE: high -->\n"
+        "<!-- MCU_CONFIDENCE: medium -->\n"
+        "<!-- MCU_CONFIDENCE: low -->\n\n"
+        f"原任务：\n{original_prompt}\n\n主模型输出：\n{primary_text}"
+    )
+
+
+def _write_result(
+    report: Dict[str, Any], text: str, output: Optional[str], report_path: Optional[str]
+) -> None:
+    if output:
+        output_file = Path(output)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text(strip_confidence_marker(text) + "\n", encoding="utf-8")
+    if report_path:
+        target = Path(report_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _attempt_provider(
+    provider: Dict[str, Any],
+    prompt: str,
+    media: MediaInput,
+    report: Dict[str, Any],
+    *,
+    api_calls_limit: int,
+    max_upload_mb: float,
+) -> Optional[ProviderResult]:
+    provider_id = str(provider.get("id") or "unnamed-provider")
+    if provider_id not in report["attempted_providers"]:
+        report["attempted_providers"].append(provider_id)
+    max_retries = max(0, int(provider.get("max_retries", 1)))
+    for attempt in range(1, max_retries + 2):
+        if report["api_calls_used"] >= api_calls_limit:
+            report["budget_exhausted"] = True
+            return None
+        report["api_calls_used"] += 1
+        try:
+            return call_provider(provider, prompt, media, max_upload_mb=max_upload_mb)
+        except VisionCallError as exc:
+            try:
+                secret, _ = resolve_api_key(provider)
+            except CredentialError:
+                secret = ""
+            report["errors"].append(
+                error_record(provider_id, exc.error_type, str(exc), attempt, [secret])
+            )
+            secret = ""
+            if exc.error_type not in RETRYABLE or attempt > max_retries:
+                break
+            time.sleep(min(2 ** (attempt - 1), 5))
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config")
@@ -365,6 +493,7 @@ def main() -> int:
     parser.add_argument("--video")
     parser.add_argument("--video-url")
     parser.add_argument("--provider", help="只测试指定 provider")
+    parser.add_argument("--max-api-calls", type=int, help="本次进程允许的 provider 尝试总数")
     parser.add_argument("--output")
     parser.add_argument("--report")
     args = parser.parse_args()
@@ -373,6 +502,12 @@ def main() -> int:
         config, config_path = load_config(args.config)
         prompt = args.prompt or Path(args.prompt_file).read_text(encoding="utf-8")
         media = build_media_input(args)
+        configured_limit = int(config["vision"].get("max_visual_calls", 20))
+        requested_limit = args.max_api_calls if args.max_api_calls is not None else configured_limit
+        api_calls_limit = min(configured_limit, requested_limit)
+        if api_calls_limit <= 0:
+            raise ValueError("--max-api-calls 必须大于 0")
+        max_upload_mb = float(config["vision"].get("max_upload_mb", 100))
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(json.dumps({"status": "invalid_input", "error": str(exc)}, ensure_ascii=False))
         return 2
@@ -403,6 +538,14 @@ def main() -> int:
         "selected_provider": None,
         "selected_model": None,
         "usage": None,
+        "confidence": None,
+        "api_calls_limit": api_calls_limit,
+        "api_calls_used": 0,
+        "budget_exhausted": False,
+        "verification": {
+            "mode": str(config["vision"].get("verification_mode", "low-confidence")),
+            "status": "not_evaluated",
+        },
         "errors": [],
         "host_fallback_enabled": bool(config["vision"].get("host_fallback", True)),
         "created_at": now_iso(),
@@ -414,44 +557,73 @@ def main() -> int:
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 20
 
-    for provider in selected:
-        provider_id = str(provider.get("id") or "unnamed-provider")
-        report["attempted_providers"].append(provider_id)
-        max_retries = max(0, int(provider.get("max_retries", 1)))
-        for attempt in range(1, max_retries + 2):
-            try:
-                result = call_provider(provider, prompt, media)
-                report["status"] = "external_success"
-                report["selected_provider"] = provider_id
-                report["selected_model"] = result.model or provider.get("model")
-                report["usage"] = safe_usage(result.usage)
-                if args.output:
-                    output_path = Path(args.output)
-                    output_path.parent.mkdir(parents=True, exist_ok=True)
-                    output_path.write_text(result.text + "\n", encoding="utf-8")
-                if args.report:
-                    report_path = Path(args.report)
-                    report_path.parent.mkdir(parents=True, exist_ok=True)
-                    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-                print(json.dumps(report, ensure_ascii=False, indent=2))
-                return 0
-            except VisionCallError as exc:
-                try:
-                    secret, _ = resolve_api_key(provider)
-                except CredentialError:
-                    secret = ""
-                record = error_record(provider_id, exc.error_type, str(exc), attempt, [secret])
-                secret = ""
-                report["errors"].append(record)
-                if exc.error_type not in RETRYABLE or attempt > max_retries:
-                    break
-                time.sleep(min(2 ** (attempt - 1), 5))
+    for index, provider in enumerate(selected):
+        result = _attempt_provider(
+            provider,
+            prompt,
+            media,
+            report,
+            api_calls_limit=api_calls_limit,
+            max_upload_mb=max_upload_mb,
+        )
+        if result is None:
+            if report["budget_exhausted"]:
+                break
+            continue
 
-    report["status"] = "external_exhausted"
-    if args.report:
-        report_path = Path(args.report)
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        provider_id = str(provider.get("id") or "unnamed-provider")
+        final_result = result
+        final_provider = provider
+        confidence = confidence_from_text(result.text)
+        report["verification"] = {
+            "mode": str(config["vision"].get("verification_mode", "low-confidence")),
+            "status": "not_required",
+            "primary_provider": provider_id,
+            "primary_model": result.model or provider.get("model"),
+            "primary_confidence": confidence or "unknown",
+        }
+        if report["verification"]["mode"] == "low-confidence" and confidence == "low":
+            report["verification"]["status"] = "requested"
+            verifier_prompt = verification_prompt(prompt, strip_confidence_marker(result.text))
+            for verifier in selected[index + 1 :]:
+                verified = _attempt_provider(
+                    verifier,
+                    verifier_prompt,
+                    media,
+                    report,
+                    api_calls_limit=api_calls_limit,
+                    max_upload_mb=max_upload_mb,
+                )
+                if verified is not None:
+                    final_result = verified
+                    final_provider = verifier
+                    report["verification"].update(
+                        {
+                            "status": "succeeded",
+                            "provider": str(verifier.get("id") or "unnamed-provider"),
+                            "model": verified.model or verifier.get("model"),
+                        }
+                    )
+                    break
+                if report["budget_exhausted"]:
+                    report["verification"]["status"] = "budget_exhausted"
+                    break
+            else:
+                report["verification"]["status"] = "no_successful_verifier"
+
+        report["status"] = "external_success"
+        report["selected_provider"] = str(final_provider.get("id") or "unnamed-provider")
+        report["selected_model"] = final_result.model or final_provider.get("model")
+        report["usage"] = safe_usage(final_result.usage)
+        report["confidence"] = confidence_from_text(final_result.text) or "unknown"
+        _write_result(report, final_result.text, args.output, args.report)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0
+
+    if report["api_calls_used"] >= api_calls_limit:
+        report["budget_exhausted"] = True
+    report["status"] = "external_budget_exhausted" if report["budget_exhausted"] else "external_exhausted"
+    _write_result(report, "", None, args.report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 21
 

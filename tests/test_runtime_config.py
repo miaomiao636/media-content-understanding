@@ -1,4 +1,4 @@
-from scripts.mcu import build_parser, resolve_analyze_options
+from scripts.mcu import analyze, build_parser, resolve_analyze_options
 
 
 def test_analyze_options_use_config_when_cli_omits_values():
@@ -64,3 +64,27 @@ def test_analyze_options_reject_non_positive_storyboard_values():
         assert "storyboard-interval" in str(exc)
     else:
         raise AssertionError("零故事板间隔必须被拒绝")
+
+
+def test_analyze_propagates_selected_config_path_to_visual_workflow(monkeypatch, tmp_path):
+    selected = tmp_path / "custom.json"
+    config = {
+        "paths": {"temp_root": str(tmp_path / "cache"), "output_root": str(tmp_path / "output")},
+        "asr": {"mode": "none", "local_model": "small", "language": "zh"},
+        "vision": {"max_frames": 20, "max_visual_calls": 3},
+    }
+    received = {}
+
+    def fake_analyze_job(args, current, options, job, *, config_path=None):
+        received["config_path"] = config_path
+        return 0
+
+    monkeypatch.setattr("scripts.mcu.load_config", lambda path: (config, selected))
+    monkeypatch.setattr("scripts.mcu.create_job", lambda current: tmp_path / "job")
+    monkeypatch.setattr("scripts.mcu.analyze_job", fake_analyze_job)
+    args = build_parser().parse_args(
+        ["--config", str(selected), "analyze", "https://www.bilibili.com/video/BV1Ab411c7De"]
+    )
+
+    assert analyze(args) == 0
+    assert received["config_path"] == selected
