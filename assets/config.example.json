@@ -1,0 +1,76 @@
+{
+  "paths": {
+    "temp_root": "",
+    "output_root": ""
+  },
+  "acquisition": {
+    "browser_fallback": true,
+    "browser_headless": false,
+    "cookie_browser": "",
+    "max_download_mb": 2048
+  },
+  "asr": {
+    "mode": "auto",
+    "local_model": "small",
+    "language": "zh"
+  },
+  "retention": {
+    "cleanup_on_success": true,
+    "failed_job_retention_hours": 72,
+    "cache_ttl_days": 7,
+    "max_cache_gb": 20,
+    "keep_source_media": false
+  },
+  "vision": {
+    "host_fallback": true,
+    "verification_mode": "low-confidence",
+    "max_visual_calls": 20,
+    "max_frames": 60,
+    "max_upload_mb": 100,
+    "providers": [
+      {
+        "id": "qwen-omni-primary",
+        "enabled": false,
+        "priority": 10,
+        "adapter": "openai-compatible",
+        "request_profile": "qwen-omni",
+        "model": "qwen3.5-omni-plus",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "api_key_env": "QWEN_VISION_API_KEY",
+        "api_key_keychain_service": "com.openai.codex.media-content-understanding.qwen",
+        "api_key_keychain_account": "qwen-omni-primary",
+        "endpoint_path": "/chat/completions",
+        "capabilities": ["image", "multi_image", "video", "audio"],
+        "timeout_seconds": 60,
+        "video_timeout_seconds": 300,
+        "max_image_base64_mb": 9,
+        "max_video_base64_mb": 9,
+        "max_retries": 1,
+        "max_output_tokens": 2000
+      },
+      {
+        "id": "xiaomi-mimo-secondary",
+        "enabled": false,
+        "priority": 20,
+        "adapter": "openai-compatible",
+        "request_profile": "xiaomi-mimo",
+        "model": "mimo-v2.5",
+        "base_url": "https://api.xiaomimimo.com/v1",
+        "api_key_env": "MIMO_API_KEY",
+        "api_key_keychain_service": "com.openai.codex.media-content-understanding.mimo",
+        "api_key_keychain_account": "xiaomi-mimo-secondary",
+        "endpoint_path": "/chat/completions",
+        "capabilities": ["image", "multi_image", "video"],
+        "timeout_seconds": 60,
+        "video_timeout_seconds": 300,
+        "max_image_base64_mb": 20,
+        "max_video_base64_mb": 49,
+        "video_fps": 2,
+        "media_resolution": "default",
+        "thinking": "disabled",
+        "max_retries": 1,
+        "max_output_tokens": 2000
+      }
+    ]
+  }
+}

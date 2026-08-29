@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "media-content-understanding"
+version = "0.2.0"
+description = "Portable Agent Skill and CLI for understanding Douyin and Bilibili videos with transcripts and visual evidence."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0"
+authors = [{ name = "Media Content Understanding contributors" }]
+dependencies = [
+  "keyring>=24,<27",
+  "platformdirs>=3,<5",
+  "yt-dlp>=2025.1.1",
+]
+
+[project.optional-dependencies]
+asr = ["faster-whisper>=1.1,<2"]
+browser = ["playwright>=1.45,<2"]
+dev = ["pytest>=8,<9", "pyyaml>=6,<7", "ruff>=0.9,<1"]
+all = [
+  "faster-whisper>=1.1,<2",
+  "playwright>=1.45,<2",
+]
+
+[project.scripts]
+mcu = "scripts.mcu:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["scripts*"]
+
+[tool.setuptools.package-data]
+scripts = ["keychain_helper.swift"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py39"
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+ignore = ["E501"]
