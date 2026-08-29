@@ -11,7 +11,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+from console import configure_utf8_stdio
 from vision_router import MediaInput, parse_sse, prepare_request, sanitize_message
+
+configure_utf8_stdio()
 
 HERE = Path(__file__).resolve().parent
 

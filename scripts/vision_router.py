@@ -19,7 +19,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from config_loader import load_config, provider_value
+from console import configure_utf8_stdio
 from credential_store import CredentialError, resolve_api_key
+
+configure_utf8_stdio()
 
 SUGGESTIONS = {
     "CONFIGURATION_ERROR": "核对模型名、Base URL、请求配置、适配器和配置字段。",

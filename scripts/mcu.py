@@ -17,12 +17,16 @@ from typing import Any, Dict, List, Optional, Sequence
 try:
     from .asr_router import TranscriptionError, TranscriptResult, TranscriptSegment, get_transcript
     from .config_loader import load_config
+    from .console import configure_utf8_stdio
     from .source_adapter import AcquiredSource, AcquisitionError, SourceRouter, default_adapters
 except ImportError:
     from asr_router import TranscriptionError, TranscriptResult, TranscriptSegment, get_transcript
     from config_loader import load_config
+    from console import configure_utf8_stdio
     from source_adapter import AcquiredSource, AcquisitionError, SourceRouter, default_adapters
 
+
+configure_utf8_stdio()
 
 HERE = Path(__file__).resolve().parent
 SKILL_ROOT = HERE.parent

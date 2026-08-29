@@ -11,6 +11,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+from console import configure_utf8_stdio
+
+configure_utf8_stdio()
+
 VALID_STATUS = {"initialized", "partial", "completed", "failed_acquisition", "failed_visual"}
 VALID_KIND = {"video", "gallery", "long_text", "mixed"}
 VALID_MEDIA_TYPE = {"image", "clip"}

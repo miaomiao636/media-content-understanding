@@ -11,6 +11,7 @@ import subprocess
 from typing import Any, Dict, List
 
 from config_loader import load_config
+from console import configure_utf8_stdio
 from credential_store import (
     CredentialError,
     delete_keychain_secret,
@@ -19,6 +20,8 @@ from credential_store import (
     resolve_api_key,
     set_keychain_secret,
 )
+
+configure_utf8_stdio()
 
 
 def providers(config: Dict[str, Any]) -> List[Dict[str, Any]]:

@@ -10,6 +10,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from console import configure_utf8_stdio
+
+configure_utf8_stdio()
+
 
 def require_bin(name: str) -> str:
     path = shutil.which(name)

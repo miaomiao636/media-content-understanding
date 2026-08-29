@@ -10,3 +10,4 @@
 - 新增 macOS Keychain 与 Windows/Linux Python Keyring 密钥持久化。
 - 新增跨平台打包、锁定依赖、CI、安全说明与 Apache-2.0 许可证。
 - 浏览器回退使用 `ffprobe` 区分预览、纯视频和纯音频流，并进行完整性验证。
+- 统一 CLI 的 UTF-8 输出，避免 Windows 默认控制台编码导致中文错误报告崩溃。

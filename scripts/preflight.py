@@ -10,7 +10,10 @@ import shutil
 from pathlib import Path
 
 from config_loader import load_config, provider_value
+from console import configure_utf8_stdio
 from credential_store import CredentialError, resolve_api_key
+
+configure_utf8_stdio()
 
 SUPPORTED_PROFILES = {"standard", "qwen-omni", "xiaomi-mimo"}
 

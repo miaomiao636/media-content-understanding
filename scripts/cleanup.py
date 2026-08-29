@@ -11,6 +11,9 @@ import time
 from pathlib import Path
 
 from config_loader import load_config
+from console import configure_utf8_stdio
+
+configure_utf8_stdio()
 
 ROOT_MARKER = ".media-content-understanding-managed"
 JOB_MARKER = ".job-managed"
