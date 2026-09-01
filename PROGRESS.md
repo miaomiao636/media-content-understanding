@@ -4,11 +4,11 @@
 
 ## 当前阶段
 
-最新稳定版仍为 `v0.2.2`。当前正在开发 `v0.3.0-rc.1` 候选，候选代码已推送到 `main`，尚未打标签或创建 Pre-release。
+最新稳定版仍为 `v0.2.2`。`v0.3.0-rc.1` 已作为 GitHub Pre-release 发布，供不同设备和 Agent 安装验收。
 
-持久化工作流位于 `.agent-workflow/`，当前仍为 `paused`。FINAL-001～FINAL-005 已完成；FINAL-006、FINAL-007 的 Codex 本地整合审核已完成，尚依赖真实非 Codex 触发、远程 CI、真实外部矩阵和发布授权。
+持久化工作流位于 `.agent-workflow/`，当前仍为 `paused`。FINAL-001～FINAL-005 已完成；FINAL-006、FINAL-007 的本地整合审核、远程 CI 和 Pre-release 已完成，尚依赖真实非 Codex 模型触发和用户跨设备验收。
 
-Claude Code 与 CodeBuddy 已交付候选实现和本地复审。2026-09-01 Codex 整合审核进一步修复了 Playwright 全量 Cookie 跨域复用和私网媒体访问、事实审计多项正确事实互相冲突、视觉路由整体超时抹掉部分结果，以及候选 Bundle 落后于当前源码的问题。新增跨平台路径回归后本地全量为 `212 passed`；Ruff、自测、compileall、锁文件、Skill 校验、Python 3.9 语法和 doctor 均通过。首轮远程 CI 发现干净 Runner 的 offline Python 和 Windows ZIP 路径问题，修复待重跑；FINAL-006/007 与真实非 Codex 触发仍未完成，因此暂不发布。
+Claude Code 与 CodeBuddy 已交付候选实现和本地复审。2026-09-01 Codex 整合审核进一步修复了 Playwright 全量 Cookie 跨域复用和私网媒体访问、事实审计多项正确事实互相冲突、视觉路由整体超时抹掉部分结果，以及候选 Bundle 落后于当前源码的问题。新增跨平台路径回归后本地全量为 `212 passed`；首轮远程 CI 发现的干净 Runner offline Python 和 Windows ZIP 路径问题已修复，第二轮 18/18 个任务通过。`v0.3.0-rc.1` Pre-release 已发布；FINAL-006/007 仍等待真实非 Codex 触发和用户验收。
 
 ## 已完成
 
@@ -43,7 +43,7 @@ Claude Code 与 CodeBuddy 已交付候选实现和本地复审。2026-09-01 Code
 - `v0.2.1` 发布提交为 `15e5af8`；`v0.2.2` 发布提交为 `3ce70c7`。两个标签和 GitHub Release 均已公开。
 - 已成功构建 `0.2.2` 的 wheel 和 sdist，并确认 wheel 包含统一 CLI、视觉路由、清理模块和 Keychain Swift 助手。
 
-### `v0.3.0-rc.1` 候选工作区（未发布）
+### `v0.3.0-rc.1` 预发布候选
 
 - FINAL-001：原生视频各分段失败、切换、预算和报告异常可聚合进入最终 `errors.json`；第二轮独立验收通过。
 - FINAL-002：关键截图与动态短片自动选择已实现；真实 FFmpeg 黑盒生成 JPG 与可探测 H.264 MP4，短片失败可降级为截图并记录限制；独立验收通过。
@@ -89,7 +89,7 @@ Claude Code 与 CodeBuddy 已交付候选实现和本地复审。2026-09-01 Code
 
 ## 当前能力边界
 
-- `v0.2.2` 公开稳定版只支持视频；不要把当前尚未发布的 RC 能力描述为稳定发布能力。
+- `v0.2.2` 公开稳定版只支持视频；`v0.3.0-rc.1` 虽已公开预发布，仍不能描述为稳定能力。
 - 图文/长文本来源获取与非视频分析包已经完成 FINAL-005 独立实时复验。
 - `mcu analyze` 默认保持 `partial`；只有人工/宿主 Agent 校订后通过 `mcu finalize` 全部门禁才进入 `completed`。
 - 真实平台测试不放入 CI；平台下载可用性受页面、地区和风控影响。
@@ -110,8 +110,8 @@ Claude Code 与 CodeBuddy 已交付候选实现和本地复审。2026-09-01 Code
 
 ### 仍需处理
 
-1. 完成 FINAL-006：Claude Code 登录后补真实触发，并完成远程九组 CI。CodeBuddy 已完成本地候选复审（门禁全绿、产物重建校验），但真实触发与远程 CI 仍外部阻断/需授权。
-2. 完成 FINAL-007 总体验收候选；稳定版必须等待用户验收，不得直接发布 `v0.3.0`。CodeBuddy 已完成本地门禁与产物校验，但真实外部矩阵、远程 CI、GitHub Pre-release 仍外部阻断/需授权。
+1. 完成 FINAL-006：Claude Code 登录后补真实模型触发；远程九组 CI 已全部通过。
+2. 完成 FINAL-007 用户验收；远程 CI 和 GitHub Pre-release 已完成，稳定版仍必须等待真实非 Codex 触发及用户跨设备反馈，不得直接发布 `v0.3.0`。
 3. `vision.host_fallback` 的真实宿主接管仍未完成端到端实测。
 
 ## 未确认事项

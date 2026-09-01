@@ -4,7 +4,7 @@
 
 ## 执行分工
 
-- Codex 主 Agent：FINAL-005 已完成，FINAL-006/007 的本地整合审核已通过；下一步是真实非 Codex 触发、远程九组 CI 和真实外部矩阵，全部通过前不得创建正式标签或 Pre-release。
+- Codex 主 Agent：本地整合审核、远程矩阵和 `v0.3.0-rc.1` Pre-release 已完成；下一步是收集真实非 Codex 触发和用户跨设备安装反馈，稳定版晋升前处理确认的问题。
 
 ## 当前起点
 
@@ -15,8 +15,8 @@
 - FINAL-003：`completed`，attempt 2 独立验收通过
 - FINAL-004：`completed`
 - FINAL-005：`completed`，真实抖音图文端到端通过（`analyze → 校订 → finalize completed`）
-- FINAL-006：`pending`，最新整合修复与 212 项本地回归通过；最终 66 文件 Skill ZIP 已重建，并通过源码一致性、Python 3.9 干净安装和安全扫描；首轮远程矩阵发现干净 Runner 的 offline Python 和 Windows ZIP 路径问题，当前修复待重跑
-- FINAL-007：`pending`，安全/正确性阻断项已在本地修复；真实外部矩阵、远程 CI、GitHub Pre-release 未完成
+- FINAL-006：`pending`，212 项本地回归、66 文件 Skill ZIP、源码一致性、Python 3.9 干净安装、安全扫描和远程 3×3 OS/Python 矩阵通过；真实非 Codex 模型触发待目标客户端登录后完成
+- FINAL-007：`pending`，安全/正确性阻断项、远程 CI 和 GitHub Pre-release 已完成；等待用户跨设备/跨 Agent 验收
 - 版本元数据：已更新至 `0.3.0rc1`（PEP 440）/ `v0.3.0-rc.1`（展示格式）
 
 ## 已完成：FINAL-003
@@ -43,7 +43,7 @@
 依赖：FINAL-003、FINAL-005 完成。
 
 - CodeBuddy 本地候选复审已完成：66 文件 Skill ZIP 重建，`shasum -a 256 -c` 全 OK，无禁止文件/绝对路径/符号链接/密钥/Cookie/AGENTS.md 泄漏；报告 `.agent-workflow/reports/FINAL-006-local-recheck-codebuddy.md`。
-- 从解压包执行安装、测试、自测、compileall 和 Skill 结构检查的执行路径与 `.github/workflows/test.yml` 的 `bundle` job 一致，等待远程九组实际运行。
+- 从解压包执行安装、测试、自测、compileall 和 Skill 结构检查的执行路径与 `.github/workflows/test.yml` 的 `bundle` job 一致；远程九组已全部通过。
 - 发布前必须执行 `build_skill_bundle.py --verify-existing ... --manifest-in ...`，确认候选 ZIP 与最终源码和文档逐文件一致。
 - CI 继续覆盖 Ubuntu/macOS/Windows 与 Python 3.9/3.11/3.13 九组组合。
 - 在本机 Codex 和至少一个非 Codex Agent 客户端做安装与触发验证。
@@ -66,7 +66,7 @@
 2. 审查候选提交和仍未跟踪文件，确认无密钥、Cookie、个人路径、原视频或越权修改。
 3. 重跑总体验证和真实样本矩阵；区分平台风控失败与代码缺陷。
 4. 确认完整 Skill ZIP 可移植，兼容声明有实际证据。
-5. 经用户授权后才提交、推送并创建 `v0.3.0-rc.1` GitHub Pre-release。
+5. `v0.3.0-rc.1` GitHub Pre-release 已按用户授权创建；后续仅在验收通过后晋升稳定版。
 6. 稳定版 `v0.3.0` 等待用户验收确认，不在本轮自动发布。
 
 ## 不在本轮范围

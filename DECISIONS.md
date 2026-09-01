@@ -310,3 +310,4 @@ FINAL-005～007 的后续候选制作交给 Claude Code；Codex 主 Agent不直�
 - 视觉摘要路由启动失败或整体超时时保守耗尽未知预算、记录 `VISION_ROUTER_FAILED` 并保留 `partial` 结果。
 - 发布前必须验证现有 Skill ZIP 与当前源码逐文件一致；仅校验 ZIP 自身哈希不足以证明它代表最终工作树。
 - ZIP 条目与 manifest 键必须使用 POSIX `/` 分隔符，避免 Windows `Path` 的 `\` 与 ZIP 标准路径不一致。干净 CI Runner 的锁文件检查不使用 `--offline`，因为 setup-uv 需先安装矩阵指定的 Python。
+- `v0.3.0-rc.1` 只作为跨设备、跨 Agent 验收用 Pre-release；即使本地门禁和远程 18 个任务全部通过，稳定版 `v0.3.0` 仍须等待用户验收确认。

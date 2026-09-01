@@ -1,12 +1,12 @@
 # v0.3.0-rc.1 候选验收清单
 
 > 制定日期：2026-08-31；最后本地复审：2026-09-01
-> 稳定版：`v0.2.2`（当前最新公开 Release）
-> 候选版本：`v0.3.0-rc.1`（未发布）
+> 稳定版：`v0.2.2`
+> 候选版本：`v0.3.0-rc.1`（GitHub Pre-release 已发布）
 > Python 版本格式：`0.3.0rc1`（PEP 440）
-> Git 标签预留：`v0.3.0-rc.1`
+> Git 标签：`v0.3.0-rc.1`，指向 `310a7ad`
 
-> **Codex 最新审核结论：本地阻断级问题已修复，候选整体仍等待外部验收。** FINAL-005 的真实抖音图文 `analyze → 校订 → finalize completed` 保持通过；2026-09-01 又修复了媒体 Cookie 跨域泄漏与私网访问、事实审计将同源多项正确事实互判为冲突、视觉路由超时丢失部分结果，以及 Skill Bundle 与当前源码漂移的问题。Claude Code `2.1.251` 已发现并注册该 Skill，但真实触发被客户端未登录状态阻断；FINAL-006/007、远程九组 CI 和 Pre-release 仍未完成。
+> **Codex 最新审核结论：代码、产物和远程矩阵门禁通过，候选已进入外部验收。** FINAL-005 的真实抖音图文 `analyze → 校订 → finalize completed` 保持通过；本地 212 项测试及 GitHub Actions 18/18 个任务通过，4 个发布附件的远程 SHA-256 与本地一致。Claude Code `2.1.251` 已发现并注册该 Skill，但真实模型触发仍需登录后验证；稳定版不得在用户验收前发布。
 
 ## 状态概览
 
@@ -17,8 +17,8 @@
 | FINAL-003 事实审计与 finalize 门禁 | completed | attempt 2 独立验收通过 |
 | FINAL-004 抖音非视频来源获取 | completed | attempt 2 独立验收通过 |
 | FINAL-005 抖音非视频分析包 | **completed** | 真实抖音图文 `analyze → 校订 → finalize completed` 通过 |
-| FINAL-006 Skill ZIP 分发 | pending | 当前 66 文件 Bundle 已重建并通过源码一致性校验；真实非 Codex 触发和远程 CI 未完成 |
-| FINAL-007 最终验收候选 | pending | 本地阻断项已修复；真实外部矩阵、远程 CI、Pre-release 均未完成 |
+| FINAL-006 Skill ZIP 分发 | pending | Bundle、本地安装和远程九组合通过；真实非 Codex 模型触发待目标客户端登录后验证 |
+| FINAL-007 最终验收候选 | pending | 本地门禁、远程 CI 和 Pre-release 完成；等待用户跨设备/跨 Agent 验收 |
 
 ## 已验证能力
 
@@ -46,8 +46,8 @@
 | --- | --- |
 | Skill ZIP 构建 | 66 个文件；包含共享浏览器验证模块、对应回归测试和源码漂移校验器 |
 | Bundle 安全测试 | 39 项通过（路径遍历、符号链接、敏感文件大小写/嵌套路径、绝对路径） |
-| CI Bundle Job | YAML 有效，九组合矩阵（Ubuntu/macOS/Windows × Python 3.9/3.11/3.13） |
-| Codex 本地解压安装 | 最新 66 文件 ZIP 在全新 Python 3.9 环境通过锁定安装、212 项测试、自测、compileall、CLI 和 Skill 结构校验；远程矩阵首轮发现的 offline Python 与 Windows ZIP 路径问题已修复待重跑 |
+| CI unit + Bundle | 九组合矩阵（Ubuntu/macOS/Windows × Python 3.9/3.11/3.13）共 18 个任务全部通过 |
+| Codex 本地解压安装 | 最新 66 文件 ZIP 在全新 Python 3.9 环境通过锁定安装、212 项测试、自测、compileall、CLI 和 Skill 结构校验 |
 | wheel 干净安装 | 最新 wheel 在全新 Python 3.9 环境通过，版本 `0.3.0rc1` |
 | Claude Code 项目级注册 | `2.1.251` 已发现 1 个项目 Skill 并注册 1 个 Skill 命令；真实触发因客户端未登录而未完成 |
 
@@ -99,7 +99,7 @@
 1. 所有外部视觉模型均失败后的宿主 Agent 视觉回退（只有路由报告和 Skill 约定验证）。
 2. `cookie_browser` 读取个人浏览器 Cookie 的路径（本机选择更隔离的专用档案方案）。
 3. Claude Code 已完成项目级发现与注册；模型真实触发仍因客户端未登录而未完成。
-4. 远程九组合 CI 实际执行结果。
+4. 用户在其他设备和 Agent 中的真实安装、模型触发与平台样本反馈。
 
 ## 变更文件清单
 
@@ -144,8 +144,9 @@
 
 ## 用户验收清单
 
-- [x] 确认 `v0.2.2` 仍是当前稳定版，候选不会自动发布。
+- [x] 确认 `v0.2.2` 仍是当前稳定版；`v0.3.0-rc.1` 仅作为 Pre-release 发布。
 - [x] 用公开抖音图文样本验证 `mcu analyze → 校订 → finalize completed`。
 - [x] 确认 CHANGELOG 描述与实际验证结果一致。
 - [x] 确认 Skill ZIP 不包含个人路径、密钥、Cookie、原始媒体或浏览器档案。
-- [ ] 所有阻断项解除后，再授权提交、推送和 GitHub Pre-release。
+- [x] 候选提交、推送并创建 GitHub Pre-release；标签指向通过远程矩阵的提交。
+- [ ] 在其他设备和非 Codex Agent 完成安装、触发和平台样本验收后，再决定是否晋升稳定版。

@@ -5,10 +5,11 @@
 - 日期：2026-09-01
 - 项目：`media-content-understanding`
 - 仓库：`https://github.com/miaomiao636/media-content-understanding`
-- 最新公开版本：`v0.2.2`
-- 当前目标：完成 `v0.3.0-rc.1` 候选，交由主 Agent 做最终审核、发布收尾和用户验收。
+- 最新稳定版：`v0.2.2`
+- 最新预发布版：`v0.3.0-rc.1`
+- 当前目标：由不同设备和 Agent 安装 `v0.3.0-rc.1` 做用户验收，验收通过后再决定是否晋升稳定版。
 
-Claude Code 与 CodeBuddy 已完成候选交付和本地复审。2026-09-01 Codex 主 Agent 的最终整合审核新增四组修复：媒体 Cookie 按 URL 隔离并阻断私网/危险重定向、事实声明按来源和最近软件对象对齐、视觉路由整体超时保留部分结果、Bundle 可校验是否落后于当前源码。最新本地门禁为 212 passed，Ruff、自测、compileall、锁文件、Skill 结构、Python 3.9 语法与 doctor 通过。首轮远程 CI 发现 offline Python 与 Windows ZIP 路径问题，修复待重跑；当前仍不是可发布状态。
+Claude Code 与 CodeBuddy 已完成候选交付和本地复审。2026-09-01 Codex 主 Agent 的最终整合审核新增四组修复：媒体 Cookie 按 URL 隔离并阻断私网/危险重定向、事实声明按来源和最近软件对象对齐、视觉路由整体超时保留部分结果、Bundle 可校验是否落后于当前源码。最新本地门禁为 212 passed；首轮远程 CI 发现的 offline Python 与 Windows ZIP 路径问题已修复，第二轮 18/18 个 GitHub Actions 任务通过。`v0.3.0-rc.1` 已作为 Pre-release 发布，稳定版仍为 `v0.2.2`。
 
 最新本地整合修复证据见 `.agent-workflow/reports/FINAL-007-integration-repair-codex.md`；当前 Skill ZIP SHA-256 为 `d3fa83f6a023085f7684c32c2e75abdc7939bf406ace93f0ddcde4d072d8f260`。
 
@@ -28,7 +29,7 @@ Claude Code 与 CodeBuddy 已完成候选交付和本地复审。2026-09-01 Code
 - 阶段：`implementation`
 - 检查点：`.agent-workflow/checkpoints/20260830T151453097862Z-paused.json`
 - 最新 Claude Code 交接检查点：`.agent-workflow/checkpoints/20260831T113325247086Z-paused.json`。
-- 当前动作：从 FINAL-006 开始完成完整 Skill 分发、远程九组 CI 和真实跨 Agent 注册/触发验收，再进入 FINAL-007。
+- 当前动作：让用户在其他设备和非 Codex Agent 安装 Pre-release，完成真实模型触发和平台样本验收，再决定是否晋升稳定版。
 - 状态校验：暂停前 `workflow.py validate` 返回 `ok: true`；只有预期的任务写路径冲突警告。
 - 版本元数据：已更新至 `0.3.0rc1`（PEP 440）/ `v0.3.0-rc.1`（展示格式），通过 `test_release_metadata.py` 规范化映射验证。
 
@@ -39,8 +40,8 @@ Claude Code 与 CodeBuddy 已完成候选交付和本地复审。2026-09-01 Code
 | FINAL-003 | 事实一致性与完成状态门禁 | completed | attempt 2 pass，133 项全量测试通过 |
 | FINAL-004 | 抖音图文与长文本来源获取 | completed | attempt 2 pass |
 | FINAL-005 | 抖音非视频内容分析包 | completed | 真实抖音图文端到端通过（`analyze → 校订 → finalize completed`） |
-| FINAL-006 | 完整 Skill 分发与跨环境安装 | pending | Codex 本地整合修复、最新 Bundle 重建、漂移校验、Python 3.9 干净安装和安全扫描通过；真实非 Codex 触发及远程九组 CI 待完成 |
-| FINAL-007 | `v0.3.0-rc.1` 最终验收候选 | pending | Codex 本地 212 项回归、静态门禁和当前产物校验通过；远程矩阵首轮发现的 CI/Windows 可移植性问题修复待重跑，发布未完成 |
+| FINAL-006 | 完整 Skill 分发与跨环境安装 | pending | Bundle、本地 Python 3.9 干净安装、安全扫描及远程 3×3 OS/Python 矩阵通过；真实非 Codex Agent 模型触发仍待目标客户端登录后验收 |
+| FINAL-007 | `v0.3.0-rc.1` 最终验收候选 | pending | 本地 212 项、远程 18/18 任务、产物校验和与 GitHub Pre-release 均完成；等待用户跨设备/跨 Agent 验收 |
 
 ## 已完成且有独立证据的成果
 
@@ -105,12 +106,12 @@ Claude Code 与 CodeBuddy 已完成候选交付和本地复审。2026-09-01 Code
 - Claude Code `2.1.251` 在隔离临时项目中加载 1 个项目 Skill 并注册 1 个 Skill 命令；实际 `/media-content-understanding` 调用在模型请求前被未登录状态阻断，详见 `.agent-workflow/reports/FINAL-006-local-registration-codex.md`。
 - CodeBuddy 本地候选复审：204 passed、Ruff、self_test、compileall、uv lock、skill bundle 测试、git diff --check 全绿；wheel/sdist/Skill ZIP 重建并 `shasum -a 256 -c` 全 OK；Skill ZIP 66 文件无禁止文件/绝对路径/符号链接/密钥/Cookie/AGENTS.md 泄漏；详见 `.agent-workflow/reports/FINAL-006-local-recheck-codebuddy.md` 与 `.agent-workflow/reports/FINAL-007-local-recheck-codebuddy.md`。
 - 2026-09-01 整合修复：媒体安全下载、Cookie 域隔离、事实审计对象对齐、视觉超时降级和 Bundle 源码漂移验证已加入；最新全量 212 项及本地静态门禁通过。首轮远程 CI 证实需移除干净 Runner 的 offline 限制并统一 Windows ZIP 路径分隔符。
-- 当前实时抖音图文已通过；候选代码已推送，尚未打标签或发布。
+- 当前实时抖音图文已通过；`v0.3.0-rc.1` 标签和 Pre-release 已发布，等待外部安装验收。
 
 ## 工作区与 Git 注意事项
 
 - 分支：`main`
-- 当前已推送候选基线：`56f2f3e`；本轮 CI 可移植性修复尚待提交和推送。
+- 发布标签 `v0.3.0-rc.1` 指向 `310a7ad`；该提交的 GitHub Actions 18/18 任务通过。
 - 候选代码、测试和用户文档已推送；`.agent-workflow/`、`AGENTS.md` 与 Agent 任务清单仍是本机未跟踪文件，不得上传。
 - 不得执行 `git reset --hard`、`git checkout --`、批量格式化或覆盖现有修改。
 - `AGENTS.md` 是用户原有未跟踪文件：只读，不修改、不提交、不删除。

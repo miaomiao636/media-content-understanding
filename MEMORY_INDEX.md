@@ -8,13 +8,13 @@
 - 路径：以当前 Git 检出目录为准
 - 仓库：`https://github.com/miaomiao636/media-content-understanding`
 - 分支：`main`
-- 最新已发布标签：`v0.2.2`
-- 当前工作区：`v0.3.0-rc.1` 候选开发中，版本元数据已更新为 `0.3.0rc1`，候选代码已推送到 `main`，尚未打标签或发布
+- 最新稳定标签：`v0.2.2`
+- 最新预发布标签：`v0.3.0-rc.1`，指向 `310a7ad`；版本元数据为 `0.3.0rc1`
 - 形态：Agent Skill + Python CLI，不是 Web 服务，不使用数据库。
-- 已发布能力：公开抖音和哔哩哔哩视频。
-- 当前工作区新增：失败报告聚合、关键截图/动态短片、事实一致性与 `finalize` 门禁、抖音图文/长文本来源及统一分析编排。
+- 稳定版能力：公开抖音和哔哩哔哩视频。
+- 预发布新增：失败报告聚合、关键截图/动态短片、事实一致性与 `finalize` 门禁、抖音图文/长文本来源及统一分析编排。
 - 输出：`media-analysis-package` 1.0；分析先生成 `partial`，只有显式 `mcu finalize` 通过结构、证据、图文图片层校订和事实冲突门禁后才能进入 `completed`。
-- 当前审核结论：最新本地整合修复已解决 Playwright Cookie 跨域/私网下载风险、事实审计多项正确事实误判、视觉路由整体超时异常和 Bundle 源码漂移问题；212 项测试、Ruff、自测、compileall、锁文件、Skill 结构与 Python 3.9 语法验证通过。首轮远程 CI 发现 offline Python 与 Windows ZIP 路径问题，修复待重跑；真实非 Codex 触发和 FINAL-006/007 独立 pass 验收仍未完成，因此暂不发布。
+- 当前审核结论：最新本地整合修复已解决 Playwright Cookie 跨域/私网下载风险、事实审计多项正确事实误判、视觉路由整体超时异常和 Bundle 源码漂移问题；212 项本地测试和 GitHub Actions 18/18 个任务通过。Skill ZIP、wheel、sdist 与校验和已作为 `v0.3.0-rc.1` Pre-release 发布；真实非 Codex 模型触发和用户跨设备验收仍未完成，因此不得晋升稳定版。
 
 ## Context 导航
 
@@ -59,5 +59,5 @@
 
 1. FINAL-003 已通过第二轮独立验收，不需要重做。
 2. CodeBuddy 的本地候选复审之后，Codex 又完成四组整合修复、最新产物重建和 Python 3.9 干净验证；当前报告以 `.agent-workflow/reports/FINAL-007-integration-repair-codex.md` 为准，CodeBuddy 报告保留为历史证据。
-3. 仍需用户授权/目标环境完成：远程九组 CI 推送触发、Claude Code 登录后真实 `/media-content-understanding` 触发、真实外部矩阵（抖音视频、B站视频、千问成功/MiMo接管/宿主回退端到端）、`v0.3.0-rc.1` GitHub Pre-release。
-4. 全部门禁通过后再发布 RC；稳定版 `v0.3.0` 等待用户验收。
+3. 仍需目标环境完成：Claude Code 登录后真实 `/media-content-understanding` 触发，以及用户在其他设备/Agent 对抖音、B站和视觉故障接管的安装验收。
+4. RC 已发布；稳定版 `v0.3.0` 必须等待用户验收。
