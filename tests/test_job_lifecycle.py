@@ -77,7 +77,11 @@ def test_analyze_removes_successful_job_after_package_validation(monkeypatch, tm
     assert payload["job_retained"] is False
     assert payload["job_dir"] is None
     assert list(Path(config["paths"]["temp_root"]).glob("job-*")) == []
-    assert Path(payload["package_dir"]).is_dir()
+    package = Path(payload["package_dir"])
+    assert package.is_dir()
+    manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["content"]["summary_html_file"] == "summary.html"
+    assert (package / "summary.html").is_file()
 
 
 def test_analyze_marks_failed_acquisition_for_retention(monkeypatch, tmp_path, capsys):

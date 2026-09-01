@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import re
@@ -12,6 +13,9 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+from urllib.parse import quote, unquote, urlsplit
+
+from markdown_it import MarkdownIt
 
 try:
     from .claim_audit import audit_claims
@@ -107,6 +111,170 @@ def safe_relative(root: Path, value: str) -> Path:
     return path
 
 
+def _media_url(value: str) -> str:
+    """Return a browser-safe package-relative URL without changing its filesystem path."""
+    return quote(value.replace("\\", "/"), safe="/._-~")
+
+
+def _media_caption(item: Dict[str, Any]) -> str:
+    location = item.get("time_range") or item.get("timestamp")
+    if not location and item.get("image_index"):
+        location = f"第 {item['image_index']} 张"
+    pieces = [str(value).strip() for value in (location, item.get("reason"), item.get("description")) if str(value or "").strip()]
+    return " · ".join(pieces)
+
+
+def _configure_safe_image_renderer(markdown: MarkdownIt, root: Path) -> None:
+    default_image = markdown.renderer.rules["image"]
+
+    def render_image(tokens: Any, index: int, options: Any, env: Any) -> str:
+        token = tokens[index]
+        source = str(token.attrGet("src") or "")
+        parsed = urlsplit(source)
+        normalized = unquote(parsed.path).replace("\\", "/")
+        safe = bool(normalized) and not (
+            parsed.scheme or parsed.netloc or parsed.query or parsed.fragment
+        )
+        if safe:
+            try:
+                safe = safe_relative(root, normalized).is_file()
+            except ValueError:
+                safe = False
+        if not safe:
+            alt = html.escape(str(token.content or "图片"))
+            return f'<span class="blocked-image" role="note">[已阻止不安全图片：{alt}]</span>'
+        token.attrSet("src", _media_url(normalized))
+        token.attrSet("loading", "lazy")
+        return default_image(tokens, index, options, env)
+
+    markdown.renderer.rules["image"] = render_image
+
+
+def render_summary_html(root: Path, manifest: Dict[str, Any]) -> str:
+    """Render a safe, standalone HTML reading view for one analysis package."""
+    root = root.expanduser().resolve()
+    content = manifest.get("content") if isinstance(manifest.get("content"), dict) else {}
+    summary_value = str(content.get("summary_file") or "summary.md")
+    summary_path = safe_relative(root, summary_value)
+    summary = summary_path.read_text(encoding="utf-8")
+
+    markdown = MarkdownIt(
+        "commonmark",
+        {"html": False, "linkify": False, "typographer": False},
+    ).enable("table")
+    _configure_safe_image_renderer(markdown, root)
+    rendered_summary = markdown.render(summary)
+    source = manifest.get("source") if isinstance(manifest.get("source"), dict) else {}
+    title = str(source.get("title") or "内容提炼").strip() or "内容提炼"
+
+    evidence: List[str] = []
+    for item in manifest.get("media") or []:
+        if not isinstance(item, dict) or item.get("type") not in VALID_MEDIA_TYPE:
+            continue
+        value = str(item.get("path") or "").strip()
+        if not value:
+            continue
+        media_path = safe_relative(root, value)
+        if not media_path.is_file():
+            continue
+        url = html.escape(_media_url(value), quote=True)
+        caption = html.escape(_media_caption(item))
+        if item["type"] == "image":
+            # Images already embedded in Markdown need not be repeated in the evidence gallery.
+            if value in summary or _media_url(value) in summary:
+                continue
+            evidence.append(
+                '<figure class="evidence-item evidence-image">'
+                f'<img src="{url}" alt="{html.escape(str(item.get("reason") or "视觉证据"), quote=True)}" loading="lazy">'
+                f"<figcaption>{caption}</figcaption>"
+                "</figure>"
+            )
+        else:
+            evidence.append(
+                '<figure class="evidence-item evidence-clip">'
+                '<video controls preload="metadata">'
+                f'<source src="{url}" type="video/mp4">'
+                f'当前浏览器无法直接播放该短片。<a href="{url}">单独打开视频</a>。'
+                "</video>"
+                f"<figcaption>{caption}</figcaption>"
+                "</figure>"
+            )
+    evidence_section = ""
+    if evidence:
+        evidence_section = (
+            '<section class="evidence-gallery" aria-labelledby="evidence-title">'
+            '<h2 id="evidence-title">媒体证据</h2>'
+            + "".join(evidence)
+            + "</section>"
+        )
+
+    safe_title = html.escape(title)
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'">
+  <title>{safe_title}</title>
+  <style>
+    :root {{ color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }}
+    body {{ margin: 0; background: #f5f7fa; color: #18202a; line-height: 1.72; }}
+    main {{ box-sizing: border-box; width: min(980px, calc(100% - 32px)); margin: 32px auto; padding: clamp(24px, 5vw, 56px); background: #fff; border-radius: 18px; box-shadow: 0 14px 42px rgba(26, 38, 56, .10); }}
+    h1, h2, h3 {{ line-height: 1.3; color: #111827; }}
+    h2 {{ margin-top: 2em; padding-bottom: .35em; border-bottom: 1px solid #e5e7eb; }}
+    a {{ color: #1268c4; }}
+    code {{ padding: .12em .38em; border-radius: 5px; background: #eef2f7; }}
+    pre {{ overflow-x: auto; padding: 16px; border-radius: 10px; background: #111827; color: #e5e7eb; }}
+    pre code {{ padding: 0; background: transparent; }}
+    blockquote {{ margin-inline: 0; padding: .2em 1em; border-left: 4px solid #8aa4c2; color: #4b5563; }}
+    table {{ width: 100%; border-collapse: collapse; margin: 1.25em 0; }}
+    th, td {{ padding: 10px 12px; border: 1px solid #dfe4ea; text-align: left; vertical-align: top; }}
+    th {{ background: #f0f4f8; }}
+    img, video {{ display: block; width: 100%; height: auto; max-height: 76vh; margin: 18px auto; border-radius: 12px; background: #0b0f14; object-fit: contain; }}
+    .evidence-gallery {{ margin-top: 3em; }}
+    .evidence-item {{ margin: 24px 0 36px; }}
+    figcaption {{ color: #596579; font-size: .93rem; }}
+    .blocked-image {{ display: inline-block; padding: .3em .55em; border: 1px solid #d7a35b; border-radius: 6px; color: #8a5715; }}
+    .reading-note {{ margin-top: 48px; color: #778195; font-size: .86rem; }}
+    @media (prefers-color-scheme: dark) {{
+      body {{ background: #0d1117; color: #dbe3ec; }}
+      main {{ background: #161b22; box-shadow: none; }}
+      h1, h2, h3 {{ color: #f0f6fc; }}
+      h2 {{ border-color: #30363d; }}
+      th, td {{ border-color: #30363d; }}
+      th, code {{ background: #21262d; }}
+      blockquote, figcaption {{ color: #9da7b3; }}
+    }}
+    @media print {{ body {{ background: #fff; }} main {{ width: 100%; margin: 0; padding: 0; box-shadow: none; }} video {{ max-height: 420px; }} }}
+  </style>
+</head>
+<body>
+  <main>
+    <article>{rendered_summary}</article>
+    {evidence_section}
+    <p class="reading-note">本页由理解包中的 summary.md 和媒体证据自动生成；修改 Markdown 后请重新执行 finalize。</p>
+  </main>
+</body>
+</html>
+"""
+
+
+def write_summary_html(root: Path, manifest: Optional[Dict[str, Any]] = None) -> Path:
+    """Write summary.html and declare it in the in-memory manifest."""
+    root = root.expanduser().resolve()
+    if manifest is None:
+        manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    content = manifest.setdefault("content", {})
+    if not isinstance(content, dict):
+        raise ValueError("manifest.content 必须是对象")
+    html_value = str(content.get("summary_html_file") or "summary.html")
+    html_path = safe_relative(root, html_value)
+    content["summary_html_file"] = html_value
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text(render_summary_html(root, manifest), encoding="utf-8", newline="\n")
+    return html_path
+
+
 def initialize(args: argparse.Namespace) -> int:
     root = Path(args.package_dir).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -137,6 +305,7 @@ def initialize(args: argparse.Namespace) -> int:
             "language": "",
             "focus": args.focus or "",
             "summary_file": "summary.md",
+            "summary_html_file": "summary.html",
             "source_content_file": "source-content.md",
         },
         "chapters": [],
@@ -159,6 +328,7 @@ def initialize(args: argparse.Namespace) -> int:
     if manifest["content"].get("transcript_file"):
         (root / "transcript.md").write_text("# 时间戳转写\n\n", encoding="utf-8")
     (root / "errors.json").write_text("[]\n", encoding="utf-8")
+    write_summary_html(root, manifest)
     print(root)
     return 0
 
@@ -212,6 +382,20 @@ def validate(root: Path) -> Dict[str, Any]:
                     errors.append("completed 包的 summary.md 不能为空")
         except ValueError as exc:
             errors.append(str(exc))
+
+    html_value = content.get("summary_html_file")
+    if html_value is not None:
+        if not isinstance(html_value, str) or not html_value.strip():
+            errors.append("content.summary_html_file 必须是非空字符串")
+        else:
+            try:
+                html_path = safe_relative(root, html_value)
+                if not html_path.is_file():
+                    errors.append(f"HTML 阅读版不存在：{html_value}")
+                elif not html_path.read_text(encoding="utf-8").strip():
+                    errors.append(f"HTML 阅读版为空：{html_value}")
+            except (OSError, UnicodeDecodeError, ValueError) as exc:
+                errors.append(f"HTML 阅读版无效：{exc}")
 
     for index, item in enumerate(manifest.get("media") or []):
         if not isinstance(item, dict):
@@ -507,7 +691,16 @@ def finalize_package(
         (item["text"] for item in evidence_sources if item["source_type"] == "transcript"), ""
     )
 
+    html_blockers: List[Dict[str, str]] = []
+    try:
+        write_summary_html(root, manifest)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        html_blockers.append(
+            {"code": "HTML_RENDER_FAILED", "message": f"HTML 阅读版生成失败：{exc}"}
+        )
+
     blockers, present_sections = _summary_gate(summary)
+    blockers[:0] = html_blockers
     blockers.extend(_image_analysis_gate(root, content))
     required_visual_types = _required_visual_types(
         manifest, "\n".join((source_text, transcript_text)), visual_mode
@@ -617,6 +810,8 @@ def main() -> int:
         dest="visual_evidence",
         help="明确声明当前内容不需要视觉证据",
     )
+    render_html = sub.add_parser("render-html")
+    render_html.add_argument("package_dir")
     args = parser.parse_args()
     if args.command == "init":
         return initialize(args)
@@ -626,6 +821,17 @@ def main() -> int:
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result["ok"] else 3
+    if args.command == "render-html":
+        root = Path(args.package_dir).expanduser().resolve()
+        manifest_path = root / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        html_path = write_summary_html(root, manifest)
+        processing = manifest.get("processing")
+        if isinstance(processing, dict):
+            processing["updated_at"] = now_iso()
+        atomic_write_json(manifest_path, manifest)
+        print(json.dumps({"ok": True, "path": str(html_path)}, ensure_ascii=False, indent=2))
+        return 0
     result = validate(Path(args.package_dir).expanduser().resolve())
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["ok"] else 2

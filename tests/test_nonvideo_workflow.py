@@ -121,6 +121,9 @@ def test_nonvideo_analyze_routes_kind_without_transcript_or_temporal_video_field
     assert "transcription_method" not in payload
     assert not (package / "transcript.md").exists()
     assert not (package / "media" / "clips").exists()
+    assert manifest["content"]["summary_html_file"] == "summary.html"
+    assert (package / "summary.html").is_file()
+    assert "<article>" in (package / "summary.html").read_text(encoding="utf-8")
     assert validate(package)["ok"] is True
 
     source_content = (package / "source-content.md").read_text(encoding="utf-8")

@@ -3,7 +3,7 @@ name: media-content-understanding
 description: Read and distill public Douyin or Bilibili links, including Douyin long text and image posts, into concise evidence-linked analysis packages. Use captions or ASR for video, and provenance-separated author text, image OCR, and visual inference for non-video posts. Do not use for Obsidian ingestion, download-only requests, private/paid media, or ordinary video editing.
 license: Apache-2.0
 metadata:
-  version: "v0.3.0-rc.1"
+  version: "v0.3.0-rc.2"
   supported-platforms: "douyin,bilibili"
 ---
 
@@ -134,6 +134,12 @@ python3 <skill_dir>/scripts/mcu.py finalize <package_dir>
 
 `finalize` 会同时检查摘要是否仍为准备稿、必需结构是否完整、内容需要的截图或短片是否存在、图文包的 `image-analysis.md` 是否仍含未校订占位内容，以及数字范围、金额、百分比、时长、版本号和模型/软件名是否与来源一致。审计会同时读取来源正文、转写、`steps.md`/结构化 `steps`、章节和媒体描述，并保留来源类型与可信层级。即使摘要的错误值被媒体描述重复，也不能掩盖转写或步骤中的矛盾值。只有所有门禁通过才会原子地写入 `completed`；否则包保持 `partial`，阻断项写入 `manifest.finalization.blockers` 并返回到 CLI。不要手工改写完成状态，也不要只改摘要而保留未校订图片层。
 
+`analyze` 和 `finalize` 还会同步生成 `summary.html` HTML 阅读版。它可直接用浏览器打开，会渲染 Markdown 表格和包内图片，并将 `media/clips/*.mp4` 显示为带播放控件的本地视频。HTML 是派生阅读层，`summary.md` 仍是可编辑的主文档。手工修改 Markdown 后，运行 `finalize` 或以下命令重新生成：
+
+```bash
+python3 <skill_dir>/scripts/package_tool.py render-html <package_dir>
+```
+
 ### 7. 输出验证
 
 按 [references/package-contract.md](references/package-contract.md) 生成 `media-analysis-package`，然后运行：
@@ -143,7 +149,7 @@ python3 <skill_dir>/scripts/package_tool.py validate <package_dir>
 python3 <skill_dir>/scripts/mcu.py finalize <package_dir>
 ```
 
-`validate` 负责基础文件契约，`finalize` 负责完成状态门禁。任一失败时先修复包内容。最终向用户报告摘要、转写、截图、短片和错误报告的具体路径。
+`validate` 负责基础文件契约，`finalize` 负责完成状态门禁和 HTML 重生成。任一失败时先修复包内容。最终向用户报告 Markdown 摘要、HTML 阅读版、转写、截图、短片和错误报告的具体路径。
 
 ## 证据与安全边界
 

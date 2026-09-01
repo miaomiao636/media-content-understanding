@@ -311,3 +311,10 @@ FINAL-005～007 的后续候选制作交给 Claude Code；Codex 主 Agent不直�
 - 发布前必须验证现有 Skill ZIP 与当前源码逐文件一致；仅校验 ZIP 自身哈希不足以证明它代表最终工作树。
 - ZIP 条目与 manifest 键必须使用 POSIX `/` 分隔符，避免 Windows `Path` 的 `\` 与 ZIP 标准路径不一致。干净 CI Runner 的锁文件检查不使用 `--offline`，因为 setup-uv 需先安装矩阵指定的 Python。
 - `v0.3.0-rc.1` 只作为跨设备、跨 Agent 验收用 Pre-release；即使本地门禁和远程 18 个任务全部通过，稳定版 `v0.3.0` 仍须等待用户验收确认。
+
+## 2026-09-01：Markdown 为主文档，HTML 为可移植阅读层
+
+- `summary.md` 继续作为人和 Agent 可编辑的唯一摘要源，`summary.html` 从 Markdown 和 `manifest.media` 确定性生成，不建立第二份可独立编辑的内容。
+- `analyze` 生成初版 HTML，`finalize` 依据最新 Markdown 刷新；用户也可显式执行 `render-html`。
+- HTML 不含 JavaScript 或在线 CDN，禁用原始 Markdown HTML，并只显示理解包内真实存在的图片和短片，防止包外本机文件和远程跟踪资源被意外加载。
+- 为保持旧包可验证，`content.summary_html_file` 对旧包兼容可选；新包固定声明并生成 `summary.html`。

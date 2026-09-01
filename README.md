@@ -21,7 +21,7 @@
 - 静态截图与动态短片的最小证据策略。
 - 千问、MiMo 及普通 OpenAI 兼容视觉接口。
 - macOS、Windows、Linux 配置和安全密钥存储。
-- 标准 `media-analysis-package` 输出与验证。
+- 标准 `media-analysis-package` 输出与验证，同时生成可编辑的 `summary.md` 和可直接浏览的 `summary.html`。
 
 ## 安装
 
@@ -60,6 +60,8 @@ uv run mcu analyze "https://www.bilibili.com/video/BV..." --focus "提炼操作�
 ```
 
 结果默认保存到用户文档目录下的“媒体内容提炼”文件夹，可以在配置或命令行中修改。
+
+每个理解包都会保留 `summary.md` 作为可编辑源文档，并生成 `summary.html` 阅读版。双击 HTML 即可在普通浏览器中查看排版、截图和本地短视频播放器，不依赖 Codex、VS Code 或其他 Agent 的 Markdown 预览。修改 Markdown 后运行 `uv run mcu finalize <package_dir>`，或单独运行 `uv run python scripts/package_tool.py render-html <package_dir>` 刷新 HTML。
 
 运行参数按“显式命令行参数 → 用户 `config.json` → 内置默认值”的顺序解析。例如未传 `--asr-model` 时使用 `asr.local_model`，显式传入时则覆盖配置。
 

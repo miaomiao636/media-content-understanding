@@ -7,7 +7,9 @@
 - 仓库：`https://github.com/miaomiao636/media-content-understanding`
 - 最新稳定版：`v0.2.2`
 - 最新预发布版：`v0.3.0-rc.1`
-- 当前目标：由不同设备和 Agent 安装 `v0.3.0-rc.1` 做用户验收，验收通过后再决定是否晋升稳定版。
+- 当前目标：发布新增 HTML 阅读版的 `v0.3.0-rc.2`，再由不同设备和 Agent 安装验收；稳定版仍等待用户确认。
+
+2026-09-01 新增变更：当前工作区版本为 `0.3.0rc2`，视频、图文和纯文字分析均会同时生成 `summary.md` 与 `summary.html`。HTML 支持包内图片和 MP4 短片播放，禁止包外/远程图片加载。本地 217 项测试、静态检查、自测、编译、Skill 校验和构建均通过；尚未推送或发布 `v0.3.0-rc.2`。
 
 Claude Code 与 CodeBuddy 已完成候选交付和本地复审。2026-09-01 Codex 主 Agent 的最终整合审核新增四组修复：媒体 Cookie 按 URL 隔离并阻断私网/危险重定向、事实声明按来源和最近软件对象对齐、视觉路由整体超时保留部分结果、Bundle 可校验是否落后于当前源码。最新本地门禁为 212 passed；首轮远程 CI 发现的 offline Python 与 Windows ZIP 路径问题已修复，第二轮 18/18 个 GitHub Actions 任务通过。`v0.3.0-rc.1` 已作为 Pre-release 发布，稳定版仍为 `v0.2.2`。
 

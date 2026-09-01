@@ -1106,7 +1106,7 @@ name = "markdown-it-py"
 version = "3.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "mdurl", marker = "python_full_version < '3.10'" },
+    { name = "mdurl" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/38/71/3b932df36c1a044d397a1f92d1cf91ee0a503d91e470cbd670aa66b07ed0/markdown-it-py-3.0.0.tar.gz", hash = "sha256:e3f60a94fa066dc52ec76661e37c851cb232d92f9886b15cb560aaada2df8feb", size = 74596, upload-time = "2023-06-03T06:41:14.443Z" }
 wheels = [
@@ -1124,10 +1124,11 @@ wheels = [
 
 [[package]]
 name = "media-content-understanding"
-version = "0.3.0rc1"
+version = "0.3.0rc2"
 source = { editable = "." }
 dependencies = [
     { name = "keyring" },
+    { name = "markdown-it-py" },
     { name = "platformdirs", version = "4.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "platformdirs", version = "4.11.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "yt-dlp", version = "2025.10.14", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
@@ -1158,6 +1159,7 @@ requires-dist = [
     { name = "faster-whisper", marker = "extra == 'all'", specifier = ">=1.1,<2" },
     { name = "faster-whisper", marker = "extra == 'asr'", specifier = ">=1.1,<2" },
     { name = "keyring", specifier = ">=24,<27" },
+    { name = "markdown-it-py", specifier = ">=3,<5" },
     { name = "platformdirs", specifier = ">=3,<5" },
     { name = "playwright", marker = "extra == 'all'", specifier = ">=1.45,<2" },
     { name = "playwright", marker = "extra == 'browser'", specifier = ">=1.45,<2" },

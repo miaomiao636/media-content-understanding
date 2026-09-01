@@ -6,6 +6,8 @@
 
 最新稳定版仍为 `v0.2.2`。`v0.3.0-rc.1` 已作为 GitHub Pre-release 发布，供不同设备和 Agent 安装验收。
 
+`v0.3.0-rc.2` 工作区候选已完成 HTML 阅读版：视频、图文和纯文字分析都同时生成 `summary.md` 与 `summary.html`，包内图片可直接显示，MP4 短片使用浏览器播放控件。包外路径和远程图片会被阻止。当前本地 217 项测试、Ruff、自测、compileall、Skill 校验、wheel/sdist/67 文件 Skill ZIP 构建与源码一致性校验全绿；尚未推送或发布。
+
 持久化工作流位于 `.agent-workflow/`，当前仍为 `paused`。FINAL-001～FINAL-005 已完成；FINAL-006、FINAL-007 的本地整合审核、远程 CI 和 Pre-release 已完成，尚依赖真实非 Codex 模型触发和用户跨设备验收。
 
 Claude Code 与 CodeBuddy 已交付候选实现和本地复审。2026-09-01 Codex 整合审核进一步修复了 Playwright 全量 Cookie 跨域复用和私网媒体访问、事实审计多项正确事实互相冲突、视觉路由整体超时抹掉部分结果，以及候选 Bundle 落后于当前源码的问题。新增跨平台路径回归后本地全量为 `212 passed`；首轮远程 CI 发现的干净 Runner offline Python 和 Windows ZIP 路径问题已修复，第二轮 18/18 个任务通过。`v0.3.0-rc.1` Pre-release 已发布；FINAL-006/007 仍等待真实非 Codex 触发和用户验收。
@@ -23,6 +25,7 @@ Claude Code 与 CodeBuddy 已交付候选实现和本地复审。2026-09-01 Code
 - 已提供千问 Omni、Xiaomi MiMo 和普通 OpenAI 兼容接口配置。
 - 已实现环境变量、macOS Keychain、Windows/Linux Keyring 凭据路径。
 - 已定义并实现 `media-analysis-package` 1.0 的初始化和校验。
+- 已实现同步 HTML 阅读版，支持 Markdown 表格、包内图片、MP4 短片播放和手工 `render-html` 刷新。
 - 已实现带根标记、任务标记和显式 `--apply` 的安全缓存清理工具。
 - 已实现“显式 CLI 参数 → 用户配置 → 内置默认值”的运行参数优先级。
 - 已将 ASR 模式、模型、语言、故事板帧数和下载上限接入实际运行流程。

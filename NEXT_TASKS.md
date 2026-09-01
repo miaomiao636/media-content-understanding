@@ -4,7 +4,7 @@
 
 ## 执行分工
 
-- Codex 主 Agent：本地整合审核、远程矩阵和 `v0.3.0-rc.1` Pre-release 已完成；下一步是收集真实非 Codex 触发和用户跨设备安装反馈，稳定版晋升前处理确认的问题。
+- Codex 主 Agent：完成 `v0.3.0-rc.2` HTML 阅读版的 GitHub 矩阵、Pre-release 发布与在线核验；然后继续收集真实非 Codex 触发和跨设备安装反馈。
 
 ## 当前起点
 
@@ -17,7 +17,7 @@
 - FINAL-005：`completed`，真实抖音图文端到端通过（`analyze → 校订 → finalize completed`）
 - FINAL-006：`pending`，212 项本地回归、66 文件 Skill ZIP、源码一致性、Python 3.9 干净安装、安全扫描和远程 3×3 OS/Python 矩阵通过；真实非 Codex 模型触发待目标客户端登录后完成
 - FINAL-007：`pending`，安全/正确性阻断项、远程 CI 和 GitHub Pre-release 已完成；等待用户跨设备/跨 Agent 验收
-- 版本元数据：已更新至 `0.3.0rc1`（PEP 440）/ `v0.3.0-rc.1`（展示格式）
+- 版本元数据：已更新至 `0.3.0rc2`（PEP 440）/ `v0.3.0-rc.2`（展示格式）；本地门禁已通过，等待推送与发布。
 
 ## 已完成：FINAL-003
 

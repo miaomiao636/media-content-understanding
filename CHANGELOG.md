@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0rc2 - 2026-09-01
+
+Release candidate update for browser-readable analysis packages. Stable version remains 0.2.2 until user acceptance is complete.
+
+- 每个新理解包同时生成 `summary.md` 和独立的 `summary.html` HTML 阅读版。
+- HTML 支持标题、列表、表格、代码和包内图片，无需 Agent 或 Markdown 预览软件即可在浏览器中查看。
+- `manifest.media` 中的 MP4 短片生成带 `controls` 的本地视频播放器，同时保留时间范围、保留原因和证据描述。
+- `mcu finalize` 会依据最新 Markdown 重新生成 HTML；新增 `package_tool.py render-html` 供用户单独刷新阅读版。
+- HTML 关闭原始 Markdown HTML、设置限制性 CSP、仅引用包内媒体，且不嵌入 JavaScript 或在线 CDN。
+
 ## 0.3.0rc1 - 2026-08-31
 
 Release candidate for cross-platform and cross-Agent testing. Stable version remains 0.2.2 until the RC is promoted after user acceptance.

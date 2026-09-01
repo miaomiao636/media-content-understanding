@@ -22,7 +22,7 @@ try:
     from .config_loader import load_config
     from .console import configure_utf8_stdio
     from .evidence_selector import build_evidence_plan
-    from .package_tool import finalize_package
+    from .package_tool import finalize_package, write_summary_html
     from .sanitization import sanitize_error_text
     from .source_adapter import (
         AcquiredSource,
@@ -39,7 +39,7 @@ except ImportError:
     from config_loader import load_config
     from console import configure_utf8_stdio
     from evidence_selector import build_evidence_plan
-    from package_tool import finalize_package
+    from package_tool import finalize_package, write_summary_html
     from sanitization import sanitize_error_text
     from source_adapter import (
         AcquiredSource,
@@ -1677,6 +1677,7 @@ def analyze_nonvideo_job(
         vision_report,
         image_analysis_method,
     )
+    write_summary_html(package_dir)
     validation = run_helper("package_tool.py", ["validate", str(package_dir)])
     try:
         validation_payload = json.loads(validation.stdout)
@@ -1938,6 +1939,7 @@ def analyze_job(
             )
     write_json(package_dir / "errors.json", errors)
     update_manifest(package_dir, source, transcript, media_rows, limitations, vision_report)
+    write_summary_html(package_dir)
     validation = run_helper("package_tool.py", ["validate", str(package_dir)])
     valid = False
     try:

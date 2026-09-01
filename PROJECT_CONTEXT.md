@@ -4,7 +4,7 @@
 > 项目根目录：以当前 Git 检出目录为准
 > GitHub：`https://github.com/miaomiao636/media-content-understanding`
 > 最新稳定 Release：`v0.2.2`；最新 Pre-release：`v0.3.0-rc.1`
-> 当前工作区：`v0.3.0-rc.1` 已作为 GitHub Pre-release 发布；本地 212 项回归及远程 18/18 个任务通过，当前进入跨设备/跨 Agent 用户验收阶段
+> 当前工作区：`v0.3.0-rc.2` 候选已加入 HTML 阅读版，本地 217 项回归及构建门禁通过；GitHub 最新已发布 Pre-release 仍为 `v0.3.0-rc.1`
 
 ## 项目定位
 
@@ -85,7 +85,7 @@
 | `scripts/vision_router.py` | provider 选择、请求适配、重试、故障切换与脱敏错误报告 |
 | `scripts/media_tools.py` | FFmpeg 探测、抽帧、短片、故事板和音频提取 |
 | `scripts/evidence_selector.py` | 按字幕视觉触发词和场景变化规划关键截图与动态短片 |
-| `scripts/package_tool.py` | `media-analysis-package` 1.0 初始化、校验与 finalize 完成门禁 |
+| `scripts/package_tool.py` | `media-analysis-package` 1.0 初始化、校验、HTML 阅读版生成与 finalize 完成门禁 |
 | `scripts/sanitization.py` | 获取和视觉错误的共享脱敏边界 |
 | `scripts/claim_audit.py` | 数字、金额、百分比、时长、版本和模型/软件名称的结构化事实审计及对象对齐 |
 | `scripts/config_loader.py` | 默认配置、深度合并、跨平台路径解析 |
@@ -107,7 +107,7 @@
 - 输出：默认 `~/Documents/媒体内容提炼`。
 - 可选浏览器档案：由用户通过 `acquisition.browser_profile_dir` 明确指定，必须与缓存、输出和个人日常浏览器档案分离。
 - 密钥：环境变量或操作系统凭据存储，不写入仓库和输出包。
-- 输出包：`manifest.json`、`summary.md`、`source-content.md`、`transcript.md`、`errors.json`、`media/images/`、`media/clips/`。
+- 输出包：`manifest.json`、`summary.md`、`summary.html`、`source-content.md`、`transcript.md`、`errors.json`、`media/images/`、`media/clips/`。`summary.html` 是可直接用浏览器打开的派生阅读层。
 
 ## 对外接口定义
 
@@ -124,6 +124,7 @@ mcu [--config PATH] analyze URL
     [--vision auto|none]
     [--storyboard-interval SECONDS] [--max-frames COUNT]
 mcu [--config PATH] finalize PACKAGE_DIR
+package_tool.py render-html PACKAGE_DIR
 ```
 
 主要退出码：
@@ -150,6 +151,7 @@ mcu [--config PATH] finalize PACKAGE_DIR
 - 状态集合：`initialized`、`partial`、`completed`、`failed_acquisition`、`failed_visual`。
 - 当前 `mcu analyze` 先写入 `partial`；`mcu finalize` 只有在摘要、结构、必要视觉证据、图文图片层校订和严重事实冲突门禁全部通过时，才原子写入 `completed`，否则保持 `partial` 并列出阻断项。
 - 媒体证据必须位于包内，包含路径、类型、时间点/范围、保留原因和画面说明。
+- 新理解包声明 `content.summary_html_file=summary.html`；`analyze` 会在媒体登记后生成，`finalize` 会根据最新 Markdown 刷新。HTML 只引用包内真实存在的图片和短片。
 
 ## 配置与运行事实
 
@@ -174,7 +176,7 @@ mcu [--config PATH] finalize PACKAGE_DIR
 
 ### 事实
 
-- 最新稳定 Release `v0.2.2` 只处理视频；`v0.3.0-rc.1` Pre-release 包含本节所述候选能力。
+- 最新稳定 Release `v0.2.2` 只处理视频；`v0.3.0-rc.1` 仍是 GitHub 上已发布的最新 Pre-release，当前工作区 `v0.3.0-rc.2` 候选新增 HTML 阅读版。
 - 当前候选已经实现抖音 `gallery`、`long_text`、`mixed` 来源获取与统一分析编排；FINAL-005 attempt 3 已用当前代码实时完成 `analyze → 校订 → finalize completed`。
 - 当前候选已经实现基于字幕触发词和场景变化的关键截图与动态短片计划，并通过真实 FFmpeg 黑盒验收。
 - 当前候选已加入 `mcu finalize` 和事实审计。最新整合修复了未校订图片层绕过、ISO 日期/域名/文件误判、多项正确事实互相误判和常见凭据脱敏遗漏；全量 212 项测试通过。

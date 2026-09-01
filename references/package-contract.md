@@ -6,6 +6,7 @@
 media-analysis-package/
 ├── manifest.json
 ├── summary.md
+├── summary.html            # 浏览器阅读版
 ├── source-content.md
 ├── image-analysis.md      # 有图片的非视频内容
 ├── transcript.md          # 没有音视频时可省略
@@ -26,6 +27,7 @@ media-analysis-package/
 - `source.source_id`：平台无法提供时可使用内容哈希，但要标注生成方式。
 - `content.kind`: `video`、`gallery`、`long_text` 或 `mixed`。
 - `content.summary_file`。
+- 新生成的理解包声明 `content.summary_html_file`，默认为 `summary.html`。旧包不声明该字段时仍可验证；一旦声明，文件必须位于包内、存在且非空。
 - `media`: 视觉证据数组。
 - `limitations`: 缺失信息数组。
 
@@ -72,7 +74,17 @@ media-analysis-package/
 
 ## 验收
 
-`completed` 包必须有非空 `summary.md`。所有 `media[].path` 必须位于包内且真实存在。`package_tool.py validate` 还会拒绝非视频包中的 transcript 声明、短片、时间点和时间范围。
+`completed` 包必须有非空 `summary.md`。所有 `media[].path` 必须位于包内且真实存在。`package_tool.py validate` 还会检查已声明的 HTML 阅读版，并拒绝非视频包中的 transcript 声明、短片、时间点和时间范围。
+
+### HTML 阅读版
+
+`summary.html` 是由 `summary.md` 和 `manifest.media` 生成的派生展示层：
+
+- Markdown 标题、列表、表格、链接和包内图片会渲染为浏览器页面。
+- `manifest.media` 中未在 Markdown 正文引用的图片会加入证据区。
+- `clip` 证据会生成 `<video controls preload="metadata">`，用相对路径播放包内 MP4。
+- 原始 HTML 默认被转义，页面使用限制性 CSP，不嵌入 JavaScript，不依赖在线 CDN。
+- `analyze` 会在完成证据登记后生成 HTML；`finalize` 会根据最新 Markdown 重新生成。也可单独执行 `python3 scripts/package_tool.py render-html <package_dir>`。
 
 ### 完成状态门禁
 
