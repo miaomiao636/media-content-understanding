@@ -11,7 +11,7 @@ import importlib.util
 import json
 import os
 import zipfile
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -281,6 +281,9 @@ class TestBundleSecurity:
 
 
 class TestBundleDeterminism:
+    def test_archive_names_use_posix_separators_on_windows(self):
+        assert _bundle._archive_name(PureWindowsPath("scripts/mcu.py")) == "scripts/mcu.py"
+
     def test_consecutive_builds_same_hash(self, tmp_path: Path):
         zip1 = tmp_path / "v1.zip"
         zip2 = tmp_path / "v2.zip"

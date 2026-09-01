@@ -309,3 +309,4 @@ FINAL-005～007 的后续候选制作交给 Claude Code；Codex 主 Agent不直�
 - 事实审计只在同对象、不同来源之间判定矛盾；同一来源中与摘要精确匹配并列出现的其他正确声明不互相冲突。版本号优先绑定最近的软件对象。
 - 视觉摘要路由启动失败或整体超时时保守耗尽未知预算、记录 `VISION_ROUTER_FAILED` 并保留 `partial` 结果。
 - 发布前必须验证现有 Skill ZIP 与当前源码逐文件一致；仅校验 ZIP 自身哈希不足以证明它代表最终工作树。
+- ZIP 条目与 manifest 键必须使用 POSIX `/` 分隔符，避免 Windows `Path` 的 `\` 与 ZIP 标准路径不一致。干净 CI Runner 的锁文件检查不使用 `--offline`，因为 setup-uv 需先安装矩阵指定的 Python。

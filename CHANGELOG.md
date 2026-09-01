@@ -2,7 +2,7 @@
 
 ## 0.3.0rc1 - 2026-08-31
 
-Release candidate. Stable version remains 0.2.2. This RC has not been published or released.
+Release candidate for cross-platform and cross-Agent testing. Stable version remains 0.2.2 until the RC is promoted after user acceptance.
 
 - 新增抖音图文、长文本和混合内容解析，区分作者正文、标题、作者、发布时间和原序图片。
 - 新增 `douyin_content_adapter.py`，支持 `long_text`、`gallery`、`mixed` 三种非视频来源类型。
@@ -20,6 +20,7 @@ Release candidate. Stable version remains 0.2.2. This RC has not been published 
 - 真实公开抖音图文已完成 `analyze → 证据校订 → finalize completed`；平台风控仍可能随时间要求用户重新登录或验证。
 - CodeBuddy 本地候选复审：在当前最终代码重跑 204 passed、Ruff、self_test、compileall、uv lock、skill bundle 测试、git diff --check 全绿；重建 wheel/sdist/Skill ZIP 并更新 `dist/SHA256SUMS.txt`；Skill ZIP 66 文件安全扫描无禁止文件/绝对路径/符号链接/密钥/Cookie/AGENTS.md 泄漏。真实非 Codex 触发、远程九组 CI、真实外部矩阵和 GitHub Pre-release 仍外部阻断/需用户授权，未发布。
 - 最终整合修复：Playwright 媒体 Cookie 改为按候选 URL 过滤，跨域重定向移除认证信息，视频下载复用公网 IP 锁定与安全重定向；事实审计按来源和最近软件对象对齐，避免多项正确事实互相误判；视觉路由整体超时保留部分结果；Bundle 新增当前源码漂移校验。
+- 远程矩阵修复：干净 CI Runner 允许 setup-uv 下载指定 Python；Skill ZIP 条目和 manifest 在 Windows/macOS/Linux 统一使用 POSIX `/` 分隔符。
 
 ## 0.2.2 - 2026-08-30
 

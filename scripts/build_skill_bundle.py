@@ -12,7 +12,7 @@ import json
 import re
 import stat
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Optional
 
 # Root-relative paths that are always included (files).
@@ -100,6 +100,11 @@ SENSITIVE_DATA_STEMS: set[str] = {
 
 def _normalized_component(value: str) -> str:
     return re.sub(r"[-_.\s]+", "", value.casefold())
+
+
+def _archive_name(path: PurePath) -> str:
+    """Return the platform-independent path used by ZIP files and manifests."""
+    return path.as_posix()
 
 
 def _sensitive_data_name(name: str) -> bool:
@@ -196,7 +201,7 @@ def _compute_manifest(files: list[Path], project_root: Path) -> dict[str, str]:
         with open(full, "rb") as f:
             for chunk in iter(lambda: f.read(65536), b""):
                 h.update(chunk)
-        manifest[str(rel)] = h.hexdigest()
+        manifest[_archive_name(rel)] = h.hexdigest()
     return manifest
 
 
@@ -219,7 +224,7 @@ def build_zip(project_root: Path, output_path: Path) -> dict:
         for rel in files:
             full = project_root / rel
             # Store with deterministic permissions (readable by all).
-            info = zipfile.ZipInfo(str(rel))
+            info = zipfile.ZipInfo(_archive_name(rel))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = (
                 stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
@@ -253,7 +258,7 @@ def verify_existing_bundle(
     security_errors = _check_security(project_root, files)
     errors.extend(security_errors)
     current_manifest = _compute_manifest(files, project_root)
-    expected_names = [str(path) for path in files]
+    expected_names = [_archive_name(path) for path in files]
     try:
         with zipfile.ZipFile(bundle_path) as archive:
             actual_names = archive.namelist()

@@ -9,12 +9,12 @@
 - 仓库：`https://github.com/miaomiao636/media-content-understanding`
 - 分支：`main`
 - 最新已发布标签：`v0.2.2`
-- 当前工作区：`v0.3.0-rc.1` 候选开发中，版本元数据已更新为 `0.3.0rc1`，FINAL-005 真实端到端已通过，尚未提交、打标签或发布
+- 当前工作区：`v0.3.0-rc.1` 候选开发中，版本元数据已更新为 `0.3.0rc1`，候选代码已推送到 `main`，尚未打标签或发布
 - 形态：Agent Skill + Python CLI，不是 Web 服务，不使用数据库。
 - 已发布能力：公开抖音和哔哩哔哩视频。
 - 当前工作区新增：失败报告聚合、关键截图/动态短片、事实一致性与 `finalize` 门禁、抖音图文/长文本来源及统一分析编排。
 - 输出：`media-analysis-package` 1.0；分析先生成 `partial`，只有显式 `mcu finalize` 通过结构、证据、图文图片层校订和事实冲突门禁后才能进入 `completed`。
-- 当前审核结论：最新本地整合修复已解决 Playwright Cookie 跨域/私网下载风险、事实审计多项正确事实误判、视觉路由整体超时异常和 Bundle 源码漂移问题；211 项测试、Ruff、自测、compileall、锁文件、Skill 结构与 Python 3.9 语法验证通过。真实抖音非视频端到端历史通过；远程九组 CI、真实非 Codex 触发和 FINAL-006/007 独立 pass 验收仍未完成，因此不可发布。
+- 当前审核结论：最新本地整合修复已解决 Playwright Cookie 跨域/私网下载风险、事实审计多项正确事实误判、视觉路由整体超时异常和 Bundle 源码漂移问题；212 项测试、Ruff、自测、compileall、锁文件、Skill 结构与 Python 3.9 语法验证通过。首轮远程 CI 发现 offline Python 与 Windows ZIP 路径问题，修复待重跑；真实非 Codex 触发和 FINAL-006/007 独立 pass 验收仍未完成，因此暂不发布。
 
 ## Context 导航
 
@@ -50,7 +50,7 @@
 1. 不要把 Obsidian 入库功能合并进本项目；那属于后续独立流程。
 2. 抖音 `long_text/gallery/mixed` 的来源获取和统一分析已实现；FINAL-005 attempt 3 已实时完成 `mcu analyze → 校订 → finalize completed`。
 3. 不要把本机 Keychain 中的密钥复制到仓库、Context、日志或聊天。
-4. FINAL-001～FINAL-005 均已有通过报告；最新本地全量为 211 项，FINAL-005 的脱敏通过报告为 `.agent-workflow/reports/FINAL-005-attempt-3-codex.md`。
+4. FINAL-001～FINAL-005 均已有通过报告；最新本地全量为 212 项，FINAL-005 的脱敏通过报告为 `.agent-workflow/reports/FINAL-005-attempt-3-codex.md`。
 5. 平台适配修改必须保留 URL 白名单、短链二次校验、按候选 URL Cookie 隔离、公网 IP/重定向检查和媒体完整性检查。
 6. `AGENTS.md` 是用户原有未跟踪文件，不得修改、提交或删除；`.agent-workflow/` 是本轮持久化交接依据。
 7. 抖音、B站、千问主模型、MiMo 故障接管和 Playwright 专用登录复用均已做真实验收。

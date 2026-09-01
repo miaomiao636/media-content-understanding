@@ -33,7 +33,7 @@
 
 | 验证 | 结果 |
 | --- | --- |
-| pytest 全量 | 211 passed |
+| pytest 全量 | 212 passed |
 | Ruff | All checks passed |
 | self_test | OK |
 | compileall | OK |
@@ -47,7 +47,7 @@
 | Skill ZIP 构建 | 66 个文件；包含共享浏览器验证模块、对应回归测试和源码漂移校验器 |
 | Bundle 安全测试 | 39 项通过（路径遍历、符号链接、敏感文件大小写/嵌套路径、绝对路径） |
 | CI Bundle Job | YAML 有效，九组合矩阵（Ubuntu/macOS/Windows × Python 3.9/3.11/3.13） |
-| Codex 本地解压安装 | 最新 66 文件 ZIP 在全新 Python 3.9 环境通过锁定安装、211 项测试、自测、compileall、CLI 和 Skill 结构校验；较早候选曾在 Python 3.11/3.12 通过，最新 ZIP 的完整跨平台矩阵留给远程 CI |
+| Codex 本地解压安装 | 最新 66 文件 ZIP 在全新 Python 3.9 环境通过锁定安装、212 项测试、自测、compileall、CLI 和 Skill 结构校验；远程矩阵首轮发现的 offline Python 与 Windows ZIP 路径问题已修复待重跑 |
 | wheel 干净安装 | 最新 wheel 在全新 Python 3.9 环境通过，版本 `0.3.0rc1` |
 | Claude Code 项目级注册 | `2.1.251` 已发现 1 个项目 Skill 并注册 1 个 Skill 命令；真实触发因客户端未登录而未完成 |
 
@@ -69,9 +69,9 @@
 
 | 产物 | SHA-256 |
 | --- | --- |
-| `skill-bundle-v0.3.0-rc.1.zip` | `04afd35591d97ce31d3fd49ba124d5248d5f5c8904a992471ce90be2d576e9d4` |
-| `media_content_understanding-0.3.0rc1-py3-none-any.whl` | `bf3257b3f18f259428d374ea0d557b85ffa9773c91dcb0203630585b9b5592eb` |
-| `media_content_understanding-0.3.0rc1.tar.gz` | `4954afa1b03d4e8f41b81a6046310ba59dcd0516b6aea0f756ccd95352038191` |
+| `skill-bundle-v0.3.0-rc.1.zip` | `d3fa83f6a023085f7684c32c2e75abdc7939bf406ace93f0ddcde4d072d8f260` |
+| `media_content_understanding-0.3.0rc1-py3-none-any.whl` | `d10bb8ff275dbce2ea437c562db93028956528b348a9961e751ab9225d3d3298` |
+| `media_content_understanding-0.3.0rc1.tar.gz` | `903ce10b59baa179c9336c6b680affee660539ebe1f45df839c180a19e9b0c1c` |
 
 ## FINAL-005 实时通过证据
 

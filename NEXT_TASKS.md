@@ -15,7 +15,7 @@
 - FINAL-003：`completed`，attempt 2 独立验收通过
 - FINAL-004：`completed`
 - FINAL-005：`completed`，真实抖音图文端到端通过（`analyze → 校订 → finalize completed`）
-- FINAL-006：`pending`，最新整合修复与 211 项本地回归通过；最终 66 文件 Skill ZIP 已重建，并通过源码一致性、Python 3.9 干净安装和安全扫描；Claude Code 真实触发与远程九组 CI 未运行
+- FINAL-006：`pending`，最新整合修复与 212 项本地回归通过；最终 66 文件 Skill ZIP 已重建，并通过源码一致性、Python 3.9 干净安装和安全扫描；首轮远程矩阵发现干净 Runner 的 offline Python 和 Windows ZIP 路径问题，当前修复待重跑
 - FINAL-007：`pending`，安全/正确性阻断项已在本地修复；真实外部矩阵、远程 CI、GitHub Pre-release 未完成
 - 版本元数据：已更新至 `0.3.0rc1`（PEP 440）/ `v0.3.0-rc.1`（展示格式）
 
@@ -63,7 +63,7 @@
 ## 主 Agent 最终审核门禁
 
 1. `.agent-workflow` 校验通过且所有任务都有独立 `pass` 报告。
-2. 审查全部未提交差异，确认无密钥、Cookie、个人路径、原视频或越权修改。
+2. 审查候选提交和仍未跟踪文件，确认无密钥、Cookie、个人路径、原视频或越权修改。
 3. 重跑总体验证和真实样本矩阵；区分平台风控失败与代码缺陷。
 4. 确认完整 Skill ZIP 可移植，兼容声明有实际证据。
 5. 经用户授权后才提交、推送并创建 `v0.3.0-rc.1` GitHub Pre-release。
