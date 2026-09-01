@@ -3,8 +3,8 @@
 > 最近核对：2026-09-01
 > 项目根目录：以当前 Git 检出目录为准
 > GitHub：`https://github.com/miaomiao636/media-content-understanding`
-> 最新稳定 Release：`v0.2.2`；最新 Pre-release：`v0.3.0-rc.1`
-> 当前工作区：`v0.3.0-rc.2` 候选已加入 HTML 阅读版，本地 217 项回归及构建门禁通过；GitHub 最新已发布 Pre-release 仍为 `v0.3.0-rc.1`
+> 最新稳定 Release：`v0.2.2`；最新 Pre-release：`v0.3.0-rc.2`
+> 当前工作区：`v0.3.0-rc.2` HTML 阅读版已发布；本地 Python 3.9 下 217 项回归及 GitHub Actions 18/18 个跨平台任务通过
 
 ## 项目定位
 
@@ -176,7 +176,7 @@ package_tool.py render-html PACKAGE_DIR
 
 ### 事实
 
-- 最新稳定 Release `v0.2.2` 只处理视频；`v0.3.0-rc.1` 仍是 GitHub 上已发布的最新 Pre-release，当前工作区 `v0.3.0-rc.2` 候选新增 HTML 阅读版。
+- 最新稳定 Release `v0.2.2` 只处理视频；`v0.3.0-rc.2` 是 GitHub 上已发布的最新 Pre-release，新增 HTML 阅读版。
 - 当前候选已经实现抖音 `gallery`、`long_text`、`mixed` 来源获取与统一分析编排；FINAL-005 attempt 3 已用当前代码实时完成 `analyze → 校订 → finalize completed`。
 - 当前候选已经实现基于字幕触发词和场景变化的关键截图与动态短片计划，并通过真实 FFmpeg 黑盒验收。
 - 当前候选已加入 `mcu finalize` 和事实审计。最新整合修复了未校订图片层绕过、ISO 日期/域名/文件误判、多项正确事实互相误判和常见凭据脱敏遗漏；全量 212 项测试通过。
@@ -187,7 +187,7 @@ package_tool.py render-html PACKAGE_DIR
 
 ### 推理
 
-- 对外最准确的表述是“稳定版 0.2.2，公开测试版 0.3.0-rc.1”；RC 能力必须明确标注为预发布，不能宣传为稳定能力。
+- 对外最准确的表述是“稳定版 0.2.2，公开测试版 0.3.0-rc.2”；RC 能力必须明确标注为预发布，不能宣传为稳定能力。
 - `partial` 是有意的安全状态；只有显式 `finalize` 通过门禁后才允许进入 `completed`。
 
 ### 风险与边界
@@ -211,7 +211,8 @@ package_tool.py render-html PACKAGE_DIR
 - `v0.2.0`：上一版本标签，指向 `9b61c48`。
 - `v0.2.1`：上一发布标签，指向 `15e5af8`；包含配置优先级、下载上限、任务状态、缓存生命周期、专用浏览器登录档案和安全管理标记。
 - `v0.2.2`：当前稳定标签，指向 `3ce70c7`；包含视觉共享预算、合计上传限制、显式配置传递和结构化低置信度复核。
-- `v0.3.0-rc.1`：当前预发布标签，指向 `310a7ad`；本地 212 项及远程 18/18 个任务通过。
+- `v0.3.0-rc.1`：上一个预发布标签，指向 `310a7ad`；本地 212 项及远程 18/18 个任务通过。
+- `v0.3.0-rc.2`：最新预发布标签，指向 `749a938`；新增 HTML 阅读版，本地 Python 3.9 下 217 项及远程 18/18 个任务通过。
 
 ## 维护规则
 

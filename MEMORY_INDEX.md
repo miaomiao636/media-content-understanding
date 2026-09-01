@@ -9,13 +9,13 @@
 - 仓库：`https://github.com/miaomiao636/media-content-understanding`
 - 分支：`main`
 - 最新稳定标签：`v0.2.2`
-- 最新预发布标签：`v0.3.0-rc.1`，指向 `310a7ad`；版本元数据为 `0.3.0rc1`
-- 当前工作区候选：`0.3.0rc2` / `v0.3.0-rc.2`；新增 `summary.html` 阅读版，发布前本地 217 项测试与构建通过。
+- 最新预发布标签：`v0.3.0-rc.2`，指向 `749a938`；版本元数据为 `0.3.0rc2`
+- 最新预发布新增 `summary.html` 阅读版；本地 Python 3.9 下 217 项测试和 GitHub Actions 18/18 个任务通过。
 - 形态：Agent Skill + Python CLI，不是 Web 服务，不使用数据库。
 - 稳定版能力：公开抖音和哔哩哔哩视频。
 - 预发布新增：失败报告聚合、关键截图/动态短片、事实一致性与 `finalize` 门禁、抖音图文/长文本来源及统一分析编排。
 - 输出：`media-analysis-package` 1.0；`summary.md` 是可编辑主文档，`summary.html` 是可显示包内图片和 MP4 短片的浏览器阅读层。分析先生成 `partial`，只有显式 `mcu finalize` 通过门禁后才能进入 `completed`。
-- 当前审核结论：最新本地整合修复已解决 Playwright Cookie 跨域/私网下载风险、事实审计多项正确事实误判、视觉路由整体超时异常和 Bundle 源码漂移问题；212 项本地测试和 GitHub Actions 18/18 个任务通过。Skill ZIP、wheel、sdist 与校验和已作为 `v0.3.0-rc.1` Pre-release 发布；真实非 Codex 模型触发和用户跨设备验收仍未完成，因此不得晋升稳定版。
+- 当前审核结论：HTML 阅读版已通过本地 Python 3.9 下 217 项测试与 GitHub Actions 18/18 个任务；Skill ZIP、wheel、sdist 与校验和已作为 `v0.3.0-rc.2` Pre-release 发布。真实非 Codex 模型触发和用户跨设备验收仍未完成，因此不得晋升稳定版。
 
 ## Context 导航
 

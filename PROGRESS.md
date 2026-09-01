@@ -4,9 +4,9 @@
 
 ## 当前阶段
 
-最新稳定版仍为 `v0.2.2`。`v0.3.0-rc.1` 已作为 GitHub Pre-release 发布，供不同设备和 Agent 安装验收。
+最新稳定版仍为 `v0.2.2`。`v0.3.0-rc.2` 已作为 GitHub Pre-release 发布，供不同设备和 Agent 安装验收。
 
-`v0.3.0-rc.2` 工作区候选已完成 HTML 阅读版：视频、图文和纯文字分析都同时生成 `summary.md` 与 `summary.html`，包内图片可直接显示，MP4 短片使用浏览器播放控件。包外路径和远程图片会被阻止。当前本地 217 项测试、Ruff、自测、compileall、Skill 校验、wheel/sdist/67 文件 Skill ZIP 构建与源码一致性校验全绿；尚未推送或发布。
+`v0.3.0-rc.2` 已完成 HTML 阅读版：视频、图文和纯文字分析都同时生成 `summary.md` 与 `summary.html`，包内图片可直接显示，MP4 短片使用浏览器播放控件。包外路径和远程图片会被阻止。本地 Python 3.9 下 217 项测试、Ruff、自测、compileall、Skill 校验、wheel/sdist/67 文件 Skill ZIP 构建与源码一致性校验全绿；GitHub Actions 18/18 个任务通过，预发布与四个资产已在线。
 
 持久化工作流位于 `.agent-workflow/`，当前仍为 `paused`。FINAL-001～FINAL-005 已完成；FINAL-006、FINAL-007 的本地整合审核、远程 CI 和 Pre-release 已完成，尚依赖真实非 Codex 模型触发和用户跨设备验收。
 
@@ -92,7 +92,7 @@ Claude Code 与 CodeBuddy 已交付候选实现和本地复审。2026-09-01 Code
 
 ## 当前能力边界
 
-- `v0.2.2` 公开稳定版只支持视频；`v0.3.0-rc.1` 虽已公开预发布，仍不能描述为稳定能力。
+- `v0.2.2` 公开稳定版只支持视频；`v0.3.0-rc.2` 虽已公开预发布，仍不能描述为稳定能力。
 - 图文/长文本来源获取与非视频分析包已经完成 FINAL-005 独立实时复验。
 - `mcu analyze` 默认保持 `partial`；只有人工/宿主 Agent 校订后通过 `mcu finalize` 全部门禁才进入 `completed`。
 - 真实平台测试不放入 CI；平台下载可用性受页面、地区和风控影响。
