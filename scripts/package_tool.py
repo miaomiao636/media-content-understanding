@@ -271,7 +271,7 @@ def write_summary_html(root: Path, manifest: Optional[Dict[str, Any]] = None) ->
     html_path = safe_relative(root, html_value)
     content["summary_html_file"] = html_value
     html_path.parent.mkdir(parents=True, exist_ok=True)
-    html_path.write_text(render_summary_html(root, manifest), encoding="utf-8", newline="\n")
+    html_path.write_text(render_summary_html(root, manifest), encoding="utf-8")
     return html_path
 
 
