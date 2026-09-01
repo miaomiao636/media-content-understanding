@@ -3,13 +3,17 @@
 [![test](https://github.com/miaomiao636/media-content-understanding/actions/workflows/test.yml/badge.svg)](https://github.com/miaomiao636/media-content-understanding/actions/workflows/test.yml)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-一个面向 Agent Skills 客户端的开源 Skill：读取公开的抖音和哔哩哔哩视频链接，提取字幕或执行 ASR，结合关键画面生成精炼、可审计的媒体理解包。
+一个面向 Agent Skills 客户端的开源 Skill：读取公开的抖音和哔哩哔哩链接，对视频提取字幕或执行 ASR，对抖音长文本和图集分层保留作者正文、图片 OCR 与视觉推断，生成精炼、可审计的媒体理解包。
 
 它不负责 Obsidian 入库，也不用于绕过登录、付费、私密、DRM 或平台访问控制。
 
 ## 功能
 
 - 抖音和哔哩哔哩链接识别、短链解析与元数据获取。
+- 抖音 `/note/` 长文本、纯图集和图文混合内容路由，保留图片原始顺序。
+- 公开 `iesdouyin.com/share/note/<id>/` 入口会窄范围规范化为作品页；`v.douyin.com` 短链只在解析到具体 `/note/` 或 `/video/` 时继续，用户主页或其他落地页会被保守拒绝。
+- 作者正文、图片 OCR、视觉推断和 Agent/自动摘要四层溯源；无音视频时不生成转写或时间轴。
+- 图文包的图片分析仍含“尚未校订”占位内容时，`mcu finalize` 会保持 `partial`，不能只改摘要就绕过视觉复核。
 - `yt-dlp` 主获取器，Playwright 真实浏览器可选回退。
 - 可选的 Skill 专用持久浏览器档案，首次登录后可跨任务复用抖音会话。
 - 平台字幕优先，无字幕时可使用 `faster-whisper`。
@@ -45,6 +49,7 @@ uv sync --extra browser
 
 ```bash
 uv run mcu analyze "https://v.douyin.com/.../"
+uv run mcu analyze "https://www.douyin.com/note/7659275356428852849" --vision none
 uv run mcu analyze "https://www.bilibili.com/video/BV..." --focus "提炼操作步骤和关键参数"
 ```
 
@@ -59,6 +64,8 @@ uv run mcu analyze "https://www.bilibili.com/video/BV..." --focus "提炼操作�
 运行参数按“显式命令行参数 → 用户 `config.json` → 内置默认值”的顺序解析。例如未传 `--asr-model` 时使用 `asr.local_model`，显式传入时则覆盖配置。
 
 如需保留抖音登录状态，在用户配置中明确设置独立的 `acquisition.browser_profile_dir`。它不会读取日常 Chrome。可用 `uv run mcu browser-profile status` 查看，用 `uv run mcu browser-profile reset --yes` 清除。
+
+Skill 内置 CLI 的浏览器回退是 Playwright，不是 Ego Browser。Ego 可由具备该能力的宿主 Agent 作为人工查看或替代访问工具，但公共 Skill 不强制依赖它。Playwright 每次会打开新窗口；配置固定 `browser_profile_dir` 后，这些窗口仍复用同一个专用登录档案。捕获媒体后只取该媒体 URL 适用的 Cookie，跨域重定向会移除 Cookie/认证头，且所有媒体目标必须解析到公开网络地址。
 
 ## 配置视觉模型
 
@@ -75,8 +82,10 @@ export MIMO_API_KEY="..."
 ## 当前边界
 
 - 平台风控会持续变化，任何单一下载器都不能保证永久可用。
-- Playwright 默认不会自动读取或保存浏览器 Cookie；只有用户明确配置专用档案目录时才跨任务保存该 Skill 的登录状态。
+- Playwright 不会导入日常 Chrome 或 Ego 的 Cookie；只有用户明确配置专用档案目录时才跨任务保存该 Skill 自己的登录状态。媒体下载只临时复用浏览器判定为适用于对应 URL 的 Cookie。
 - 没有字幕、没有本地 ASR、宿主不支持视觉且未配置外部视觉模型时，只能生成部分结果。
+- 图集的外部 OCR/视觉分析复用现有 provider 路由、共享调用预算和上传上限。未配置 provider 时，`analyze` 会保留分层占位稿和原序图片，由支持视觉的宿主 Agent 校订。
+- 获取和视觉阶段写入磁盘或终端的错误会再次脱敏，移除常见凭据及 URL 查询参数；公共 Bundle 也拒绝大小写变体的凭据、Cookie、Token 和浏览器档案路径。
 - B站合集和多分P默认处理链接直接指向的单个视频/分P；批量范围应由用户明确指定。
 
 ## 开发与验证
@@ -86,6 +95,7 @@ uv sync --extra dev
 uv run pytest
 uv run python scripts/self_test.py
 uv run python scripts/package_tool.py validate /path/to/package
+uv run python scripts/build_skill_bundle.py --verify-existing /path/to/skill-bundle.zip --manifest-in /path/to/skill-bundle-manifest.json
 ```
 
 ## 隐私与版权

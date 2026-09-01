@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta property="og:title" content="错误的 DOM 标题">
+    <script id="RENDER_DATA" type="application/json">
+      {
+        "app": {
+          "aweme_detail": {
+            "aweme_id": "7659275356428852849",
+            "item_title": "三步整理旅行照片",
+            "desc": "第一步筛选。\n第二步统一色调。\n第三步按地点归档。",
+            "create_time": 1788062400,
+            "author": {"nickname": "示例作者"},
+            "images": [
+              {"url_list": ["https://media.example/first.jpg"]},
+              {"url_list": ["https://media.example/second.jpg"]}
+            ]
+          }
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <nav>首页 推荐 登录</nav>
+    <article data-e2e="note-detail">这段 DOM 文字不应覆盖结构化正文。</article>
+    <section class="comment-list">评论：作者根本没说这些。</section>
+    <aside class="recommend-list">猜你喜欢：无关内容。</aside>
+    <div class="advertisement">广告内容。</div>
+  </body>
+</html>

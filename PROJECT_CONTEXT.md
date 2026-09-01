@@ -1,15 +1,16 @@
 # 项目上下文
 
-> 最近核对：2026-08-30
+> 最近核对：2026-09-01
 > 项目根目录：以当前 Git 检出目录为准
 > GitHub：`https://github.com/miaomiao636/media-content-understanding`
-> 工作区版本、最新 Git 标签与公开 Release：`v0.2.2`
+> 最新 Git 标签与公开 Release：`v0.2.2`
+> 当前工作区：`v0.3.0-rc.1` 候选已完成最新本地整合修复与 211 项回归；FINAL-005 真实图文端到端通过；FINAL-006/007、真实非 Codex 触发与远程 CI 尚未完成，尚未提交、打标签或发布
 
 ## 项目定位
 
-`media-content-understanding` 是一个可移植的 Agent Skill 和 Python 命令行工具，用于读取用户有权访问的公开抖音、哔哩哔哩视频链接，获取媒体与字幕，在需要时执行 ASR 和视觉理解，最终生成带文字、时间轴与画面证据的 `media-analysis-package`。
+`media-content-understanding` 是一个可移植的 Agent Skill 和 Python 命令行工具，用于读取用户有权访问的公开抖音图文/视频和哔哩哔哩视频链接，获取文本、媒体与字幕，在需要时执行 ASR 和视觉理解，最终生成带文字、时间轴或画面证据的 `media-analysis-package`。
 
-本项目是整个“Agent 技能知识库”设想中的第一层能力，只负责视频内容读取、理解和提炼。它明确不负责：
+本项目是整个“Agent 技能知识库”设想中的第一层能力，只负责媒体内容读取、理解和提炼。它明确不负责：
 
 - Obsidian 入库、分类和知识库目录管理。
 - 把每个视频自动封装成新的 Skill。
@@ -36,7 +37,7 @@
 | --- | --- |
 | Skill 入口 | `SKILL.md`，符合文件夹式 Agent Skill 结构 |
 | 确定性执行层 | Python 3.9+，命令行入口 `mcu` |
-| 来源获取 | `yt-dlp` 主适配器，Playwright 浏览器回退 |
+| 来源获取 | 抖音图文专用适配器；视频使用 `yt-dlp` 主适配器和 Playwright 浏览器回退 |
 | 媒体处理 | FFmpeg、FFprobe |
 | 字幕与 ASR | VTT/SRT 解析；可选 `faster-whisper` |
 | 视觉调用 | OpenAI 兼容 HTTP 接口；内置 `standard`、`qwen-omni`、`xiaomi-mimo` 请求配置 |
@@ -62,7 +63,7 @@
  mcu doctor / acquire / analyze
         │
         ├── config_loader + credential_store
-        ├── SourceRouter（yt-dlp → Playwright）
+        ├── SourceRouter（抖音图文专用路由；视频 yt-dlp → Playwright）
         ├── 字幕解析 → faster-whisper → 原生视频视觉转写
         ├── FFmpeg 故事板 / 截图 / 短片工具
         ├── VisionRouter（外部 provider 故障切换）
@@ -77,11 +78,16 @@
 | 文件 | 职责 |
 | --- | --- |
 | `scripts/mcu.py` | 统一 CLI；编排获取、转写、故事板、视觉综合、输出与验证 |
-| `scripts/source_adapter.py` | URL 白名单、短链解析、`yt-dlp` 与 Playwright 获取、媒体完整性核验 |
+| `scripts/source_adapter.py` | URL 白名单、短链解析、`yt-dlp` 与 Playwright 获取、按 URL Cookie 隔离、安全媒体下载与完整性核验 |
+| `scripts/douyin_content_adapter.py` | 抖音图文、长文本和混合内容解析，正文/元数据提取与安全图片下载 |
+| `scripts/browser_verification.py` | 视频与图文共用的登录/验证码/滑块检测、用户等待和超时边界 |
 | `scripts/asr_router.py` | 字幕选择与规范化、本地 ASR |
 | `scripts/vision_router.py` | provider 选择、请求适配、重试、故障切换与脱敏错误报告 |
 | `scripts/media_tools.py` | FFmpeg 探测、抽帧、短片、故事板和音频提取 |
-| `scripts/package_tool.py` | `media-analysis-package` 1.0 初始化与确定性校验 |
+| `scripts/evidence_selector.py` | 按字幕视觉触发词和场景变化规划关键截图与动态短片 |
+| `scripts/package_tool.py` | `media-analysis-package` 1.0 初始化、校验与 finalize 完成门禁 |
+| `scripts/sanitization.py` | 获取和视觉错误的共享脱敏边界 |
+| `scripts/claim_audit.py` | 数字、金额、百分比、时长、版本和模型/软件名称的结构化事实审计及对象对齐 |
 | `scripts/config_loader.py` | 默认配置、深度合并、跨平台路径解析 |
 | `scripts/credential_store.py` | 环境变量、Keychain、Keyring 的密钥解析 |
 | `scripts/credential_tool.py` | 凭据状态、保存和删除 |
@@ -117,6 +123,7 @@ mcu [--config PATH] analyze URL
     [--asr auto|local|none] [--asr-model NAME] [--language CODE]
     [--vision auto|none]
     [--storyboard-interval SECONDS] [--max-frames COUNT]
+mcu [--config PATH] finalize PACKAGE_DIR
 ```
 
 主要退出码：
@@ -141,7 +148,7 @@ mcu [--config PATH] analyze URL
 - `schema_version`：`1.0`。
 - `package_type`：`media-analysis-package`。
 - 状态集合：`initialized`、`partial`、`completed`、`failed_acquisition`、`failed_visual`。
-- 当前 `mcu analyze` 无论外部视觉是否成功都写入 `partial`，由宿主 Agent 复核和校订后再改为 `completed`。
+- 当前 `mcu analyze` 先写入 `partial`；`mcu finalize` 只有在摘要、结构、必要视觉证据、图文图片层校订和严重事实冲突门禁全部通过时，才原子写入 `completed`，否则保持 `partial` 并列出阻断项。
 - 媒体证据必须位于包内，包含路径、类型、时间点/范围、保留原因和画面说明。
 
 ## 配置与运行事实
@@ -150,6 +157,7 @@ mcu [--config PATH] analyze URL
 - 2026-08-29 本机 `mcu doctor` 检查到独立用户配置，两个 provider 都从 macOS Keychain 取得凭据并通过静态检查；本次分析没有读取或输出密钥。
 - 本机可用 FFmpeg、FFprobe、`yt-dlp`、Ego Browser 和 Playwright；未安装 `faster-whisper`。
 - Ego Browser 目前仅由预检发现并作为宿主替代能力提示，统一来源适配器实际实现的是 `yt-dlp` 与 Playwright，不会直接调用 Ego Browser。
+- Ego 任务空间、日常 Chrome 和 Playwright 专用档案是独立会话；CLI 打开新 Playwright 窗口时，只要固定档案路径未改变，仍复用同一专用登录状态。
 - 显式 CLI 参数现在覆盖用户配置，用户配置覆盖内置默认值；ASR 模式、模型、语言和故事板帧数已接入该规则。
 - 下载大小上限已同时进入 `yt-dlp`、Playwright 候选下载与最终媒体校验。
 - 受控任务会记录 `running/completed/failed` 状态；新任务开始前自动执行 TTL 和容量清理。
@@ -159,22 +167,26 @@ mcu [--config PATH] analyze URL
 - `vision.max_upload_mb` 约束单次请求中全部本地 Base64 媒体的合计大小，并与 provider 单项限制共同生效。
 - 结构化 `MCU_CONFIDENCE` 标记已接入：只有主结果明确为 `low` 才调用下一 provider 复核，标记从用户正文移除但保留在报告中。
 - Playwright 默认调用 `browser.new_context()` 保持一次性隔离；用户明确配置 `acquisition.browser_profile_dir` 后改用专用持久上下文。专用档案与个人 Chrome、缓存和输出目录分离，并带有效管理标记；非空未标记目录和项目目录不会被采用或删除。可用 `mcu browser-profile status/reset` 管理。
+- Playwright 媒体候选只携带浏览器判定适用于该 URL 的 Cookie；跨域重定向移除 Cookie/认证头，初始 URL、DNS 和每次重定向均经过公开网络地址检查并使用已验证 IP 连接。
 - 本机专用档案已启用并以 `700` 权限保存；连续两次真实抖音获取均取得 310.8 秒完整媒体，第二次没有要求用户重新登录。
 
 ## 当前事实、推理与风险
 
 ### 事实
 
-- 当前公开实现和 CLI 只处理视频；`mcu analyze` 固定初始化 `content.kind=video`。
-- `references/content-routing.md` 和包契约还定义了 `gallery`、`long_text`、`mixed`，但统一 CLI 尚未实现这些来源路由。
-- `media_tools.py` 已有短片提取能力，但 `mcu analyze` 当前只自动生成并复制稀疏故事板，不会自动选择动态短片。
+- 最新公开 Release `v0.2.2` 只处理视频。
+- 当前未提交工作区已经实现抖音 `gallery`、`long_text`、`mixed` 来源获取与统一分析编排；FINAL-005 attempt 3 已用当前代码实时完成 `analyze → 校订 → finalize completed`。
+- 当前未提交工作区已经实现基于字幕触发词和场景变化的关键截图与动态短片计划，并通过真实 FFmpeg 黑盒验收。
+- 当前未提交工作区已加入 `mcu finalize` 和事实审计。最新整合修复了未校订图片层绕过、ISO 日期/域名/文件误判、多项正确事实互相误判和常见凭据脱敏遗漏；全量 211 项测试通过。
+- 最终代码审查还修复了推荐作品 ID 误匹配、获取错误查询串泄露、Bundle 敏感文件名大小写绕过和锁文件漂移。
+- 最新 66 文件 Skill ZIP 已从当前源码统一重建，通过 Bundle 漂移校验、Python 3.9 干净解压安装、211 项测试、自测、compileall、CLI 和安全扫描；较早候选曾在 Python 3.11/3.12 本地通过，最新 ZIP 的远程 3×3 OS/Python CI 尚未运行。
 - 外部视觉路由通常在第一个有效 provider 返回后停止；当其最终结构化置信度为 `low` 且仍有预算时，会调用下一可用 provider 基于同一证据复核。
 - `analyze` 只有在输出包验证通过后才按配置清理当前任务；失败任务按独立保留时间保存，`acquire` 因需交付来源文件而保留成功任务。
 
 ### 推理
 
-- 当前最准确的产品阶段是“已发布、仍需宿主最终校订的公开视频理解 Skill 0.2.2”，而不是完全无人值守的最终产品。
-- 输出状态保持 `partial` 与 `SKILL.md` 中要求宿主 Agent 完成视觉复核的流程一致，应视为当前架构选择，而不是校验失败。
+- 对外最准确的稳定状态仍是“已发布的公开视频理解 Skill 0.2.2”。工作区是未经最终审核的 `v0.3.0-rc.1` 候选，不能提前宣传为发布能力。
+- `partial` 是有意的安全状态；只有显式 `finalize` 通过门禁后才允许进入 `completed`。
 
 ### 风险与边界
 
@@ -184,6 +196,9 @@ mcu [--config PATH] analyze URL
 - 外部模型会接收用户提供的媒体证据；用户需确认内容授权、隐私和服务商条款。
 - 抖音登录仍受平台风控影响；专用持久档案已实测可跨任务复用，但不能保证平台会话永不过期。
 - 自动摘要可能误写数字或把引流视频误当作完整教程；`partial` 包必须由宿主依据转写和画面证据校订后才能进入下游知识库。
+- 抖音实时风控会使同一公开图文样本在不同时间返回挑战；实现不得绕过登录或挑战，真实成功收据只证明记录时刻的可用性。
+- 当前工作区包含大量未提交修改；接手 Agent 必须保留现有变更，禁止重置、覆盖或批量格式化。
+- 当前候选不可发布：FINAL-005 已通过，FINAL-006/007 在持久化工作流中仍无独立通过报告；Claude Code 仅完成项目级注册验证，真实触发被未登录状态阻断；远程九组合 CI 和完整真实样本矩阵未完成。
 
 ## 关键仓库历史
 

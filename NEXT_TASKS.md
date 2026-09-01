@@ -1,76 +1,78 @@
 # 后续任务
 
-> 最近整理：2026-08-30。以下任务基于当前代码实际缺口排序，不代表已获得扩大产品范围的授权。
+> 最近整理：2026-09-01。Claude Code 与 CodeBuddy 已交付，Codex 本地整合修复已完成；以下以当前代码和 `.agent-workflow/` 状态为准。
 
-## 已完成发布
+## 执行分工
 
-### `v0.2.2`
+- Codex 主 Agent：FINAL-005 已完成，FINAL-006/007 的本地整合审核已通过；下一步是真实非 Codex 触发、远程九组 CI 和真实外部矩阵，全部通过前不得创建正式标签或 Pre-release。
 
-- 发布提交 `3ce70c7` 已通过 Ubuntu、macOS、Windows 和 Python 3.9、3.11、3.13 共 9 个 CI 组合。
-- 标签和 GitHub Release 已公开，附带 wheel 与 sdist。
-- 共享视觉预算、合计上传限制、显式配置传递和结构化低置信度复核均已实现。
-- 千问主模型返回 `low` 后由 MiMo 复核为 `high` 的真实双模型链已通过，总调用严格为 2 次。
+## 当前起点
 
-### `v0.2.1`
+- 工作流：`paused`
+- 检查点：`.agent-workflow/checkpoints/20260831T113325247086Z-paused.json`
+- FINAL-001：`completed`
+- FINAL-002：`completed`
+- FINAL-003：`completed`，attempt 2 独立验收通过
+- FINAL-004：`completed`
+- FINAL-005：`completed`，真实抖音图文端到端通过（`analyze → 校订 → finalize completed`）
+- FINAL-006：`pending`，最新整合修复与 211 项本地回归通过；最终 66 文件 Skill ZIP 已重建，并通过源码一致性、Python 3.9 干净安装和安全扫描；Claude Code 真实触发与远程九组 CI 未运行
+- FINAL-007：`pending`，安全/正确性阻断项已在本地修复；真实外部矩阵、远程 CI、GitHub Pre-release 未完成
+- 版本元数据：已更新至 `0.3.0rc1`（PEP 440）/ `v0.3.0-rc.1`（展示格式）
 
-- 发布提交 `15e5af8` 已通过 Ubuntu、macOS、Windows 和 Python 3.9、3.11、3.13 共 9 个 CI 组合。
-- 标签和 GitHub Release 已公开，附带 wheel 与 sdist；Release 说明明确完整 Skill 应使用仓库 Source ZIP 或 Git clone。
-- 版本号、真实平台验收、故障切换、持久登录、安全清理和全新环境 wheel 安装均已核实。
+## 已完成：FINAL-003
 
-## 已完成的真实验收
+- 第二轮独立复验已经通过。
+- `300-3000` 与 `300-30000` 跨来源冲突会阻断完成状态。
+- `Claude`、`Gemini`、`Microsoft Excel` 等无版本实体已进入审计。
+- 正常包只有全部门禁通过才以一次原子替换进入 `completed`。
 
-- 2026-08-29：用户授权的公开抖音样本通过 Playwright 回退获取，公开 B站样本通过 `yt-dlp` 获取；两份输出包均通过校验。
-- 两条视频均由千问原生视频能力完成转写与视觉综合。
-- 使用临时无密钥覆盖模拟千问鉴权失败，确认 MiMo 能自动接管；错误类型和处理建议正确写入报告。
-- 尚未实测外部 provider 全部失败后的宿主视觉接管。
-- 已实现并实测可选的 Playwright 专用持久档案：连续两次获取同一抖音视频均成功，第二次无需登录；默认空配置仍使用一次性隔离上下文。
-- 已增加管理标记、非项目目录校验、配置深复制回归测试和版本一致性测试；发布构建已在全新虚拟环境完成安装冒烟测试。
+## 已完成：FINAL-005 抖音非视频分析包
 
-## 中优先级
+依赖：FINAL-003、FINAL-004 完成。
 
-### 1. 改进证据筛选与动态片段
+- 真实抖音图文端到端已通过：`analyze → 校订 → finalize completed`。
+- 样本：`https://www.douyin.com/note/7659275356428852849`，内容类型 `mixed`，8 张图片。
+- 浏览器验证等待机制已统一实现：检查 URL、标题和可见正文，正文内登录/滑块也会进入最长 120 秒等待并有超时测试。
+- claim_audit 已排除 ISO 日期、域名、媒体文件和元数据字段误报。
+- claim_audit 已避免同一来源内并列的正确版本、金额、时长、百分比和软件名称互相制造冲突，并把版本绑定到最近的软件对象。
+- 错误脱敏已覆盖带引号字典、请求头和普通键值中的 Cookie、Token、Client Secret 等格式。
+- 所有 finalize 门禁通过：summary、structure、visual_evidence、severe_claim_conflicts。
 
-- 根据字幕触发词、场景变化和视觉结果选择关键帧，不把全部稀疏故事板长期保留为最终证据。
-- 对动画、交互、转场和状态变化自动调用已有 `media_tools.py clip`。
-- 在 `manifest.media` 中为短片填写 `time_range`、保留原因和画面说明。
-- 保留宿主 Agent 最终复核，不让自动筛选直接把包标记为 `completed`。
+## P1：FINAL-006 完整 Skill 分发与跨环境安装
 
-### 2. 扩充测试覆盖
+依赖：FINAL-003、FINAL-005 完成。
 
-- 为凭据优先级、视觉路由错误类别和输出状态增加单元测试。
-- 对 Playwright 候选媒体选择、大小上限、音视频合并和预览完整性增加离线可控测试。
-- 将本地完成的 wheel/sdist 关键文件检查加入自动测试；完整 Agent Skill 仍以仓库目录分发，因为 wheel 不包含根目录 `SKILL.md` 和 `references/`。
-- 增加数字与专有名词的跨模态一致性检查，避免摘要把字幕/标题中的关键数字扩大或缩小一个数量级。
-- 为共享预算增加原生视频多分段编排测试，确认最终摘要保留位和失败报告聚合。
-- 为故事板抽帧增加性能基准；优先在 FFmpeg 解码阶段缩放到视觉模型所需尺寸，避免高分辨率源产生不必要的 CPU 开销。
+- CodeBuddy 本地候选复审已完成：66 文件 Skill ZIP 重建，`shasum -a 256 -c` 全 OK，无禁止文件/绝对路径/符号链接/密钥/Cookie/AGENTS.md 泄漏；报告 `.agent-workflow/reports/FINAL-006-local-recheck-codebuddy.md`。
+- 从解压包执行安装、测试、自测、compileall 和 Skill 结构检查的执行路径与 `.github/workflows/test.yml` 的 `bundle` job 一致，等待远程九组实际运行。
+- 发布前必须执行 `build_skill_bundle.py --verify-existing ... --manifest-in ...`，确认候选 ZIP 与最终源码和文档逐文件一致。
+- CI 继续覆盖 Ubuntu/macOS/Windows 与 Python 3.9/3.11/3.13 九组组合。
+- 在本机 Codex 和至少一个非 Codex Agent 客户端做安装与触发验证。
+- Claude Code `2.1.251` 已确认能发现并注册项目 Skill；完成 `/login` 后仍需重跑一次真实触发。
+- 兼容声明只列实际验证结果，不宣称“所有 Agent 通用”。
 
-## 低优先级 / 需要单独立项
+## P1：FINAL-007 `v0.3.0-rc.1` 候选
 
-### 3. 抖音图文、长文本和混合内容
+依赖：FINAL-001～006 全部完成。
 
-当前只有 `references/content-routing.md` 和包契约设计，统一 CLI 未实现。若用户决定扩展：
+- CodeBuddy 本地最终候选复审已完成：全量 pytest、Ruff、自测、compileall、uv lock、skill bundle 测试、git diff --check 全绿；wheel/sdist/Skill ZIP 重建并校验和 OK；报告 `.agent-workflow/reports/FINAL-007-local-recheck-codebuddy.md`。
+- 真实矩阵覆盖抖音视频、B站视频、抖音非视频、截图、动态短片、视觉回退和 finalize——真实外部矩阵需用户在目标环境合规触发，平台风控阻断项明确标为外部阻断，不伪造成功。
+- 更新版本、CHANGELOG、README、六份 Context 和用户验收清单。
+- 准备 Skill ZIP、wheel、sdist 与校验和（已完成重建与校验和写入 `dist/SHA256SUMS.txt`）。
+- 执行 Agent 到此只提交候选结果与风险，不得自行宣称最终通过。
 
-- 新增统一来源数据结构中的正文、图集顺序和页面元数据。
-- 实现抖音图文/长文本浏览器适配，严格排除评论、推荐、导航和广告。
-- 为图片执行 OCR 与视觉理解，并区分作者正文和图片内文字。
-- 让 `mcu analyze` 根据实际来源写入 `gallery`、`long_text` 或 `mixed`。
+## 主 Agent 最终审核门禁
 
-该任务会扩大当前“公开视频理解”范围，实施前需要确认产品边界和测试样本。
+1. `.agent-workflow` 校验通过且所有任务都有独立 `pass` 报告。
+2. 审查全部未提交差异，确认无密钥、Cookie、个人路径、原视频或越权修改。
+3. 重跑总体验证和真实样本矩阵；区分平台风控失败与代码缺陷。
+4. 确认完整 Skill ZIP 可移植，兼容声明有实际证据。
+5. 经用户授权后才提交、推送并创建 `v0.3.0-rc.1` GitHub Pre-release。
+6. 稳定版 `v0.3.0` 等待用户验收确认，不在本轮自动发布。
 
-### 4. 下游知识库编排
+## 不在本轮范围
 
-Obsidian 分类、项目级文件组织、方法提炼和知识合并应在独立 Skill 中消费本项目的输出包，不应直接耦合回本仓库。
-
-### 5. 发布自动化与兼容声明
-
-- 将现有版本一致性测试扩展到 Git 标签与发布产物元数据。
-- 形成正式发布清单和真实平台手工验收记录。
-- 明确哪些 Agent 客户端已实测，而不是笼统声明所有支持 Skills 的 Agent 都完全兼容。
-
-## 待确认事项
-
-- 是否把抖音图文/长文本纳入本 Skill，还是建立第三个独立来源 Skill。
-- `partial → completed` 应继续由宿主 Agent 手工完成，还是新增明确的 `finalize` 命令。
-- 失败任务默认保留 72 小时是否满足用户实际调试需求；当前实现已按此默认值执行。
-- 真实模型调用的成本上限、单视频最大时长和允许的第三方数据传输范围。
-- 是否需要继续保留 Ego Browser 预检项，或将其正式实现为第三来源适配器。
+- Obsidian 入库、分类和知识库目录管理。
+- 为每个视频自动生成独立 Skill。
+- B站非视频内容。
+- 绕过验证码、登录、付费、私密、DRM 或地域限制。
+- 把 Ego Browser 增加为第三个 CLI 来源适配器。

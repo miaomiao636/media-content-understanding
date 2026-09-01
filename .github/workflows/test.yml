@@ -20,7 +20,78 @@ jobs:
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: ${{ matrix.python-version }}
-      - run: uv sync --extra dev
+      - run: uv lock --check --offline
+      - run: uv sync --frozen --extra dev
       - run: uv run pytest
       - run: uv run python scripts/self_test.py
       - run: uv run python -m compileall -q scripts
+
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.9", "3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: uv lock --check --offline
+      - run: uv sync --frozen --extra dev
+
+      # Build the bundle from the checked-out repo.
+      - name: Build Skill bundle
+        run: uv run python scripts/build_skill_bundle.py --output dist/skill-bundle.zip
+
+      - name: Verify Skill bundle matches checkout
+        run: >-
+          uv run python scripts/build_skill_bundle.py
+          --verify-existing dist/skill-bundle.zip
+          --manifest-in dist/skill-bundle-manifest.json
+
+      # Extract to a fresh directory and verify from there.
+      - name: Extract and verify bundle
+        shell: bash
+        run: |
+          BUNDLE_DIR="${{ runner.temp }}/skill-bundle-verify"
+          rm -rf "$BUNDLE_DIR"
+          mkdir -p "$BUNDLE_DIR"
+          python -c "
+          import zipfile, sys, os
+          zf = zipfile.ZipFile('dist/skill-bundle.zip')
+          zf.extractall(os.environ['BUNDLE_DIR'])
+          zf.close()
+          "
+          cd "$BUNDLE_DIR"
+
+          # Skill structure check.
+          test -f SKILL.md
+          test -f README.md
+          test -f LICENSE
+          test -f pyproject.toml
+          test -f uv.lock
+          test -d scripts
+          test -d tests
+          test -d references
+          test -f scripts/mcu.py
+
+          # Install dependencies in the extracted bundle.
+          uv sync --frozen --extra dev
+
+          # Run pytest from the extracted bundle.
+          uv run pytest
+
+          # Run self-test.
+          uv run python scripts/self_test.py
+
+          # Run compileall.
+          uv run python -m compileall -q scripts
+
+          # CLI help smoke test.
+          uv run mcu --help
+
+        env:
+          BUNDLE_DIR: ${{ runner.temp }}/skill-bundle-verify
+          PYTHONDONTWRITEBYTECODE: "1"

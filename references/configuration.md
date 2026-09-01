@@ -60,6 +60,8 @@ uv run mcu browser-profile reset --yes
 
 `reset` 默认只预览；`--yes` 也只会删除同时满足“配置路径、有效管理标记、非项目目录”三项条件的专用档案。专用档案不能与 `temp_root`、`output_root`、用户主目录或文件系统根目录重叠。同一时间只能有一个任务占用同一档案；冲突会报告 `BROWSER_PROFILE_IN_USE`。平台仍可能因会话过期或风控要求重新登录。
 
+Ego Browser 的任务空间与 Playwright 专用档案是两套独立会话。宿主 Agent 可以在具备 Ego 时用它辅助查看页面，但 `mcu analyze` 内置回退不会自动接管 Ego 登录态。Playwright 打开新窗口不代表新档案；只要 `browser_profile_dir` 保持不变且未被清除，后续窗口会继续使用同一专用会话。
+
 ## ASR 配置
 
 | 字段 | 含义 |

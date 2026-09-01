@@ -5,13 +5,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from console import configure_utf8_stdio
+try:
+    from .claim_audit import audit_claims
+except ImportError:
+    from claim_audit import audit_claims
+
+try:
+    from .console import configure_utf8_stdio
+except ImportError:
+    from console import configure_utf8_stdio
 
 configure_utf8_stdio()
 
@@ -19,9 +29,73 @@ VALID_STATUS = {"initialized", "partial", "completed", "failed_acquisition", "fa
 VALID_KIND = {"video", "gallery", "long_text", "mixed"}
 VALID_MEDIA_TYPE = {"image", "clip"}
 
+SUMMARY_SECTIONS: Sequence[Tuple[str, re.Pattern[str], str]] = (
+    ("core_conclusion", re.compile(r"核心结论|一分钟", re.IGNORECASE), "缺少核心结论"),
+    (
+        "problem_and_scenario",
+        re.compile(r"解决的问题|问题与适用场景|适用场景", re.IGNORECASE),
+        "缺少解决的问题或适用场景",
+    ),
+    (
+        "content_structure",
+        re.compile(r"章节(?:结构)?|主题结构|内容结构", re.IGNORECASE),
+        "缺少章节或主题结构",
+    ),
+    (
+        "actions_and_parameters",
+        re.compile(r"可执行步骤|操作步骤|关键步骤|步骤与参数|关键参数", re.IGNORECASE),
+        "缺少可执行步骤或关键参数",
+    ),
+    (
+        "visual_evidence",
+        re.compile(r"视觉证据|截图与短片|截图或短片|证据作用", re.IGNORECASE),
+        "缺少截图、短片或视觉证据说明",
+    ),
+    (
+        "provenance_and_gaps",
+        re.compile(r"来源与推断|来源说明|事实与推断|缺失信息", re.IGNORECASE),
+        "缺少来源、推断或缺失信息说明",
+    ),
+    (
+        "remaining_verification",
+        re.compile(r"仍需验证|待验证|待确认|复刻前", re.IGNORECASE),
+        "缺少复刻前仍需验证的事项",
+    ),
+)
+
+VISUAL_TRIGGER_RE = re.compile(
+    r"这个效果|像这样|这里可以看到|画面|界面|布局|图表|代码|"
+    r"动画|转场|交互|前后变化|状态变化|演示过程"
+)
+DYNAMIC_TRIGGER_RE = re.compile(r"动画|转场|交互|前后变化|状态变化|演示过程")
+UNREVIEWED_IMAGE_ANALYSIS_MARKERS = (
+    "尚未校订。",
+    "尚未校订或无必要推断。",
+    "未取得可校订的 OCR 结果。",
+    "当前结果需由宿主 Agent 或人工对照原图校订。",
+)
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def atomic_write_json(path: Path, payload: Any) -> None:
+    """Replace a JSON file in one filesystem operation after the full payload is ready."""
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def safe_relative(root: Path, value: str) -> Path:
@@ -36,8 +110,11 @@ def safe_relative(root: Path, value: str) -> Path:
 def initialize(args: argparse.Namespace) -> int:
     root = Path(args.package_dir).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
-    (root / "media" / "images").mkdir(parents=True, exist_ok=True)
-    (root / "media" / "clips").mkdir(parents=True, exist_ok=True)
+    if args.content_type == "video":
+        (root / "media" / "images").mkdir(parents=True, exist_ok=True)
+        (root / "media" / "clips").mkdir(parents=True, exist_ok=True)
+    elif args.content_type in {"gallery", "mixed"}:
+        (root / "media" / "images").mkdir(parents=True, exist_ok=True)
     manifest_path = root / "manifest.json"
     if manifest_path.exists() and not args.force:
         print(f"manifest.json 已存在：{manifest_path}", file=sys.stderr)
@@ -61,24 +138,25 @@ def initialize(args: argparse.Namespace) -> int:
             "focus": args.focus or "",
             "summary_file": "summary.md",
             "source_content_file": "source-content.md",
-            "transcript_file": "" if args.content_type in {"gallery", "long_text"} else "transcript.md",
         },
         "chapters": [],
         "media": [],
         "limitations": [],
         "processing": {
             "acquisition_method": "",
-            "transcription_method": "",
             "vision_provider": "",
             "created_at": now_iso(),
             "updated_at": now_iso(),
         },
         "errors_file": "errors.json",
     }
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if args.content_type == "video":
+        manifest["content"]["transcript_file"] = "transcript.md"
+        manifest["processing"]["transcription_method"] = ""
+    atomic_write_json(manifest_path, manifest)
     (root / "summary.md").write_text("# 内容提炼\n\n", encoding="utf-8")
     (root / "source-content.md").write_text("# 来源内容\n\n", encoding="utf-8")
-    if manifest["content"]["transcript_file"]:
+    if manifest["content"].get("transcript_file"):
         (root / "transcript.md").write_text("# 时间戳转写\n\n", encoding="utf-8")
     (root / "errors.json").write_text("[]\n", encoding="utf-8")
     print(root)
@@ -107,8 +185,17 @@ def validate(root: Path) -> Dict[str, Any]:
         if not str(source.get(field) or "").strip():
             errors.append(f"source.{field} 不能为空")
     content = manifest.get("content") if isinstance(manifest.get("content"), dict) else {}
-    if content.get("kind") not in VALID_KIND:
+    content_kind = content.get("kind")
+    if content_kind not in VALID_KIND:
         errors.append("content.kind 无效")
+    processing = manifest.get("processing") if isinstance(manifest.get("processing"), dict) else {}
+    if content_kind in {"gallery", "long_text", "mixed"}:
+        if "transcript_file" in content:
+            errors.append("非视频包不得声明 content.transcript_file")
+        if (root / "transcript.md").exists():
+            errors.append("非视频包不得包含 transcript.md")
+        if "transcription_method" in processing:
+            errors.append("非视频包不得声明 processing.transcription_method")
     summary_value = str(content.get("summary_file") or "")
     if not summary_value:
         errors.append("content.summary_file 不能为空")
@@ -136,6 +223,13 @@ def validate(root: Path) -> Dict[str, Any]:
             errors.append(f"media[{index}] 缺少 reason 或 description")
         if not item.get("timestamp") and not item.get("time_range") and not item.get("image_index"):
             errors.append(f"media[{index}] 缺少时间点、时间范围或图片序号")
+        if content_kind in {"gallery", "long_text", "mixed"}:
+            if item.get("type") != "image":
+                errors.append(f"media[{index}] 非视频包只能登记 image 证据")
+            if not item.get("image_index"):
+                errors.append(f"media[{index}] 非视频图片缺少 image_index")
+            if "timestamp" in item or "time_range" in item:
+                errors.append(f"media[{index}] 非视频图片不得声明时间点或时间范围")
         try:
             media_path = safe_relative(root, str(item.get("path") or ""))
             if not media_path.is_file():
@@ -167,6 +261,327 @@ def validate(root: Path) -> Dict[str, Any]:
     return {"ok": not errors, "errors": errors, "warnings": warnings}
 
 
+def _read_optional_text(root: Path, value: Any) -> str:
+    if not str(value or "").strip():
+        return ""
+    try:
+        path = safe_relative(root, str(value))
+    except ValueError:
+        return ""
+    try:
+        return path.read_text(encoding="utf-8") if path.is_file() else ""
+    except OSError:
+        return ""
+
+
+def _evidence_source(
+    text: str, source_type: str, label: str, trust: int
+) -> Optional[Dict[str, Any]]:
+    if not text.strip():
+        return None
+    return {"text": text, "source_type": source_type, "label": label, "trust": trust}
+
+
+def _collect_claim_evidence(
+    root: Path, manifest: Dict[str, Any], content: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """Collect actual package sources without allowing derived media prose to mask originals."""
+    sources: List[Dict[str, Any]] = []
+
+    def add(text: str, source_type: str, label: str, trust: int) -> None:
+        source = _evidence_source(text, source_type, label, trust)
+        if source is not None:
+            sources.append(source)
+
+    source_path = content.get("source_content_file") or "source-content.md"
+    transcript_path = content.get("transcript_file")
+    if transcript_path is None and content.get("kind") == "video":
+        transcript_path = "transcript.md"
+    add(_read_optional_text(root, source_path), "source_content", str(source_path), 100)
+    if transcript_path:
+        add(_read_optional_text(root, transcript_path), "transcript", str(transcript_path), 100)
+
+    image_analysis_path = content.get("image_analysis_file")
+    if isinstance(image_analysis_path, str) and image_analysis_path.strip():
+        add(
+            _read_optional_text(root, image_analysis_path),
+            "image_analysis",
+            image_analysis_path,
+            60,
+        )
+
+    declared_step_files: List[str] = []
+    for owner in (content, manifest):
+        step_file = owner.get("steps_file")
+        if isinstance(step_file, str) and step_file.strip():
+            declared_step_files.append(step_file)
+        step_files = owner.get("steps_files")
+        if isinstance(step_files, list):
+            declared_step_files.extend(str(item) for item in step_files if str(item).strip())
+    conventional_steps = root / "steps.md"
+    if conventional_steps.is_file():
+        declared_step_files.append("steps.md")
+    seen_step_files = set()
+    for step_file in declared_step_files:
+        if step_file in seen_step_files:
+            continue
+        seen_step_files.add(step_file)
+        add(_read_optional_text(root, step_file), "steps", step_file, 90)
+
+    for owner_name, owner in (("content", content), ("manifest", manifest)):
+        steps = owner.get("steps")
+        if isinstance(steps, (list, dict)):
+            add(
+                json.dumps(steps, ensure_ascii=False),
+                "steps",
+                f"manifest.json:{owner_name}.steps",
+                90,
+            )
+    chapters = manifest.get("chapters")
+    if isinstance(chapters, list):
+        add(
+            json.dumps(chapters, ensure_ascii=False),
+            "chapters",
+            "manifest.json:chapters",
+            85,
+        )
+
+    source_metadata = manifest.get("source")
+    if isinstance(source_metadata, dict):
+        selected_metadata = {
+            key: source_metadata.get(key)
+            for key in ("title", "author", "published_at")
+            if source_metadata.get(key)
+        }
+        if selected_metadata:
+            add(
+                json.dumps(selected_metadata, ensure_ascii=False),
+                "source_metadata",
+                "manifest.json:source",
+                95,
+            )
+
+    media = manifest.get("media")
+    if isinstance(media, list):
+        for index, item in enumerate(media):
+            if not isinstance(item, dict):
+                continue
+            derived_text = "\n".join(
+                str(item.get(key) or "") for key in ("reason", "description") if item.get(key)
+            )
+            add(
+                derived_text,
+                "media_description",
+                f"manifest.json:media[{index}]",
+                60,
+            )
+    return sources
+
+
+def _summary_gate(summary: str) -> Tuple[List[Dict[str, str]], List[str]]:
+    blockers: List[Dict[str, str]] = []
+    body = re.sub(r"^#.*$", "", summary, flags=re.MULTILINE)
+    body = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL).strip()
+    if len(body) < 40:
+        blockers.append({"code": "SUMMARY_INCOMPLETE", "message": "summary.md 缺少足够的实质内容"})
+    if "当前为自动准备稿" in summary:
+        blockers.append({"code": "SUMMARY_IS_DRAFT", "message": "summary.md 仍是自动准备稿"})
+
+    heading_matches = list(re.finditer(r"^#{1,6}\s+(.+?)\s*$", summary, re.MULTILINE))
+    headings = [
+        (
+            match.group(1).strip(),
+            match.end(),
+            heading_matches[index + 1].start() if index + 1 < len(heading_matches) else len(summary),
+        )
+        for index, match in enumerate(heading_matches)
+    ]
+    present: List[str] = []
+    for code, pattern, missing_message in SUMMARY_SECTIONS:
+        matching = [(title, start, end) for title, start, end in headings if pattern.search(title)]
+        if not matching:
+            blockers.append({"code": f"STRUCTURE_{code.upper()}_MISSING", "message": missing_message})
+            continue
+        present.append(code)
+        if not any(re.sub(r"\s+", "", summary[start:end]) for _title, start, end in matching):
+            blockers.append(
+                {"code": f"STRUCTURE_{code.upper()}_EMPTY", "message": f"{matching[0][0]} 章节不能为空"}
+            )
+    return blockers, present
+
+
+def _required_visual_types(
+    manifest: Dict[str, Any], evidence_text: str, visual_mode: str
+) -> List[str]:
+    content = manifest.get("content") if isinstance(manifest.get("content"), dict) else {}
+    declared = content.get("required_visual_evidence")
+    if isinstance(declared, str):
+        declared_types = [declared]
+    elif isinstance(declared, list):
+        declared_types = [str(item) for item in declared]
+    else:
+        declared_types = []
+    declared_types = [item for item in declared_types if item in VALID_MEDIA_TYPE]
+    if declared_types:
+        return sorted(set(declared_types))
+    if visual_mode == "required":
+        return ["image_or_clip"]
+    if visual_mode == "not-required":
+        return []
+    explicit = content.get("visual_evidence_required")
+    if explicit is False:
+        return []
+    if explicit is True:
+        return ["image_or_clip"]
+    if content.get("kind") in {"gallery", "mixed"}:
+        return ["image_or_clip"]
+    if DYNAMIC_TRIGGER_RE.search(evidence_text):
+        return ["clip"]
+    if VISUAL_TRIGGER_RE.search(evidence_text):
+        return ["image_or_clip"]
+    return []
+
+
+def _image_analysis_gate(
+    root: Path, content: Dict[str, Any]
+) -> List[Dict[str, str]]:
+    if content.get("kind") not in {"gallery", "mixed"}:
+        return []
+    analysis_path = content.get("image_analysis_file")
+    if not isinstance(analysis_path, str) or not analysis_path.strip():
+        return [
+            {
+                "code": "IMAGE_ANALYSIS_MISSING",
+                "message": "图文包缺少 image-analysis.md 派生分析层",
+            }
+        ]
+    analysis_text = _read_optional_text(root, analysis_path)
+    if not analysis_text.strip():
+        return [
+            {
+                "code": "IMAGE_ANALYSIS_MISSING",
+                "message": "图文包的图片分析文件为空或不可读",
+            }
+        ]
+    if any(marker in analysis_text for marker in UNREVIEWED_IMAGE_ANALYSIS_MARKERS):
+        return [
+            {
+                "code": "IMAGE_ANALYSIS_REVIEW_REQUIRED",
+                "message": "图片 OCR 或画面分析仍含未校订占位内容",
+            }
+        ]
+    return []
+
+
+def finalize_package(
+    root: Path,
+    *,
+    visual_mode: str = "auto",
+    require_visual_evidence: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """Evaluate every completion gate, then atomically publish one manifest status."""
+    root = root.expanduser().resolve()
+    manifest_path = root / "manifest.json"
+    if require_visual_evidence is not None:
+        visual_mode = "required" if require_visual_evidence else "not-required"
+    if visual_mode not in {"auto", "required", "not-required"}:
+        raise ValueError("未知视觉证据模式")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"ok": False, "status": "partial", "blockers": [{"code": "MANIFEST_INVALID", "message": str(exc)}]}
+    if not isinstance(manifest, dict):
+        return {
+            "ok": False,
+            "status": "partial",
+            "blockers": [{"code": "MANIFEST_INVALID", "message": "manifest.json 顶层必须是对象"}],
+        }
+
+    content = manifest.get("content") if isinstance(manifest.get("content"), dict) else {}
+    summary = _read_optional_text(root, content.get("summary_file") or "summary.md")
+    evidence_sources = _collect_claim_evidence(root, manifest, content)
+    source_text = next(
+        (item["text"] for item in evidence_sources if item["source_type"] == "source_content"), ""
+    )
+    transcript_text = next(
+        (item["text"] for item in evidence_sources if item["source_type"] == "transcript"), ""
+    )
+
+    blockers, present_sections = _summary_gate(summary)
+    blockers.extend(_image_analysis_gate(root, content))
+    required_visual_types = _required_visual_types(
+        manifest, "\n".join((source_text, transcript_text)), visual_mode
+    )
+    media = [item for item in manifest.get("media") or [] if isinstance(item, dict)]
+    available_types = {str(item.get("type")) for item in media}
+    for required_type in required_visual_types:
+        if required_type == "image_or_clip" and not (available_types & VALID_MEDIA_TYPE):
+            blockers.append(
+                {"code": "VISUAL_EVIDENCE_MISSING", "message": "内容需要视觉证据，但包内没有可用截图或短片"}
+            )
+        elif required_type in VALID_MEDIA_TYPE and required_type not in available_types:
+            blockers.append(
+                {
+                    "code": "DYNAMIC_VISUAL_EVIDENCE_MISSING"
+                    if required_type == "clip"
+                    else "VISUAL_EVIDENCE_MISSING",
+                    "message": f"内容需要 {required_type} 证据，但 manifest.media 中没有该类型",
+                }
+            )
+
+    claim_audit = audit_claims(summary, evidence_sources)
+    if claim_audit["severe_conflict_count"]:
+        blockers.append(
+            {
+                "code": "SEVERE_CLAIM_CONFLICT",
+                "message": f"事实审计发现 {claim_audit['severe_conflict_count']} 个严重冲突",
+            }
+        )
+
+    # Structural validation is evaluated before publishing completed, but the current partial
+    # status is intentionally not treated as a failure during this transition.
+    structural = validate(root)
+    for message in structural.get("errors", []):
+        blockers.append({"code": "PACKAGE_STRUCTURE_INVALID", "message": str(message)})
+
+    passed = not blockers
+    finalization = {
+        "schema_version": "package-finalization/v1",
+        "status": "passed" if passed else "blocked",
+        "checked_at": now_iso(),
+        "blockers": blockers,
+        "gates": {
+            "summary": not any(item["code"].startswith("SUMMARY_") for item in blockers),
+            "structure": not any(
+                item["code"].startswith(("STRUCTURE_", "PACKAGE_STRUCTURE_")) for item in blockers
+            ),
+            "visual_evidence": not any(
+                "VISUAL_EVIDENCE" in item["code"]
+                or item["code"].startswith("IMAGE_ANALYSIS_")
+                for item in blockers
+            ),
+            "severe_claim_conflicts": claim_audit["severe_conflict_count"] == 0,
+        },
+        "summary_sections": present_sections,
+        "required_visual_types": required_visual_types,
+        "claim_audit": claim_audit,
+    }
+    manifest["status"] = "completed" if passed else "partial"
+    manifest["finalization"] = finalization
+    processing = manifest.get("processing")
+    if isinstance(processing, dict):
+        processing["updated_at"] = finalization["checked_at"]
+    atomic_write_json(manifest_path, manifest)
+    return {
+        "ok": passed,
+        "status": manifest["status"],
+        "package_dir": str(root),
+        "blockers": blockers,
+        "gates": finalization["gates"],
+        "claim_audit": claim_audit,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
@@ -180,9 +595,37 @@ def main() -> int:
     init.add_argument("--force", action="store_true")
     check = sub.add_parser("validate")
     check.add_argument("package_dir")
+    finalize = sub.add_parser("finalize")
+    finalize.add_argument("package_dir")
+    finalize.add_argument(
+        "--visual-evidence",
+        choices=("auto", "required", "not-required"),
+        default="auto",
+        help="必要视觉证据的判定方式",
+    )
+    finalize.add_argument(
+        "--require-visual-evidence",
+        action="store_const",
+        const="required",
+        dest="visual_evidence",
+        help="强制要求至少一项视觉证据",
+    )
+    finalize.add_argument(
+        "--no-require-visual-evidence",
+        action="store_const",
+        const="not-required",
+        dest="visual_evidence",
+        help="明确声明当前内容不需要视觉证据",
+    )
     args = parser.parse_args()
     if args.command == "init":
         return initialize(args)
+    if args.command == "finalize":
+        result = finalize_package(
+            Path(args.package_dir).expanduser().resolve(), visual_mode=args.visual_evidence
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["ok"] else 3
     result = validate(Path(args.package_dir).expanduser().resolve())
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["ok"] else 2

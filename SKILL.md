@@ -1,15 +1,15 @@
 ---
 name: media-content-understanding
-description: Read and distill public Douyin or Bilibili video links into a concise, evidence-linked media analysis package using platform captions or ASR plus targeted visual analysis, screenshots, and short clips. Use when the user wants to understand a Douyin/Bilibili video without watching it. Do not use for Obsidian ingestion, download-only requests, private/paid media, or ordinary video editing.
+description: Read and distill public Douyin or Bilibili links, including Douyin long text and image posts, into concise evidence-linked analysis packages. Use captions or ASR for video, and provenance-separated author text, image OCR, and visual inference for non-video posts. Do not use for Obsidian ingestion, download-only requests, private/paid media, or ordinary video editing.
 license: Apache-2.0
 metadata:
-  version: "0.2.2"
+  version: "v0.3.0-rc.1"
   supported-platforms: "douyin,bilibili"
 ---
 
-# 抖音与哔哩哔哩视频理解
+# 抖音与哔哩哔哩公开内容理解
 
-把用户提供的公开抖音或哔哩哔哩视频链接转换为可阅读、可审计的媒体理解包。只负责获取、转写、视觉理解、内容提炼和保留必要证据；不负责 Obsidian 入库、知识分类或把单个视频封装成新 Skill。
+把用户提供的公开抖音或哔哩哔哩链接转换为可阅读、可审计的媒体理解包。支持视频，也支持抖音长文本、图集和图文混合内容。只负责获取、转写、视觉理解、内容提炼和保留必要证据；不负责 Obsidian 入库、知识分类或把单个来源封装成新 Skill。
 
 ## 首选入口
 
@@ -31,7 +31,7 @@ uv run mcu analyze "<视频链接>"
 
 ## 输入
 
-- 必需：一个抖音或哔哩哔哩公开链接。
+- 必需：一个抖音或哔哩哔哩公开链接，可以是视频或抖音 `/note/` 非视频内容。
 - 可选：用户关注点、输出目录、分析深度。
 - B站链接可能是短链、普通视频或指定分P；如果用户给出合集但未指定范围，先说明将处理的分P范围。
 
@@ -55,14 +55,25 @@ uv run mcu analyze "<视频链接>"
 获取链由 CLI 维护：
 
 1. 解析分享短链并验证最终域名。
+   公开 `iesdouyin.com/share/note/<id>/` 只做到标准 `/note/<id>` 的窄规范化；`v.douyin.com` 必须解析到具体 `/note/` 或 `/video/` 作品页，不得把用户主页的预览媒体当成目标作品。
 2. 使用内置 `yt-dlp` 适配器获取元数据、字幕和媒体。
-3. 失败后按配置使用 Playwright 真实浏览器回退；不得自动读取浏览器 Cookie。
+3. 失败后按配置使用 Playwright 真实浏览器回退；不得自动导入个人 Chrome 或 Ego 的 Cookie。
 4. 如果平台要求登录，可由用户明确配置 `browser_profile_dir` 并在该 Skill 的专用窗口中主动登录；未配置时不跨任务保存登录态。`cookie_browser` 只用于用户另行授权 `yt-dlp` 读取指定浏览器 Cookie。
-5. 所有适配器失败后，保留脱敏错误并建议用户上传本地媒体；不得输出 Cookie 或带签名的媒体 URL。
+5. Playwright 捕获媒体时只能为每个候选 URL 读取浏览器判定适用的 Cookie；跨域重定向必须移除 Cookie 和认证头，初始及每次重定向目标都必须是公开网络地址。
+6. 所有适配器失败后，保留脱敏错误并建议用户上传本地媒体；不得输出 Cookie 或带签名的媒体 URL。
 
 平台差异与失败处理见 [references/platform-adapters.md](references/platform-adapters.md)。
 
 ### 3. 获取文字
+
+先读取获取器返回的 `content_kind`。`long_text`、`gallery` 或抖音图文 `mixed` 进入非视频流程：
+
+- `source-content.md` 只写作者直接正文和来源元数据。
+- 原序图片使用 `image_index` 登记；`image-analysis.md` 分开 OCR、直接可见事实与带置信度的视觉推断。
+- 外部图片分析必须通过现有视觉路由，复用 `max_visual_calls`、`max_upload_mb`、provider 单图限制和脱敏错误契约。无外部 provider 时由宿主 Agent 对照包内图片校订。
+- 无音视频时不创建或声明 transcript、转写方式、时间点、时间范围或短片目录。
+
+只有 `video` 进入以下字幕/ASR 优先级：
 
 按以下优先级：
 
@@ -115,7 +126,13 @@ CLI 会先生成稀疏故事板。Agent 必须复核故事板，只保留真正�
 - 来源明确说明、合理推断和缺失信息。
 - 复刻前仍需补充或验证的事项。
 
-CLI 可能生成自动准备稿。若 `manifest.json` 状态为 `partial`，Agent 必须完成视觉检查和摘要校订后再改成 `completed`。
+CLI 可能生成自动准备稿。若 `manifest.json` 状态为 `partial`，Agent 必须完成视觉检查和摘要校订，然后运行完成门禁：
+
+```bash
+python3 <skill_dir>/scripts/mcu.py finalize <package_dir>
+```
+
+`finalize` 会同时检查摘要是否仍为准备稿、必需结构是否完整、内容需要的截图或短片是否存在、图文包的 `image-analysis.md` 是否仍含未校订占位内容，以及数字范围、金额、百分比、时长、版本号和模型/软件名是否与来源一致。审计会同时读取来源正文、转写、`steps.md`/结构化 `steps`、章节和媒体描述，并保留来源类型与可信层级。即使摘要的错误值被媒体描述重复，也不能掩盖转写或步骤中的矛盾值。只有所有门禁通过才会原子地写入 `completed`；否则包保持 `partial`，阻断项写入 `manifest.finalization.blockers` 并返回到 CLI。不要手工改写完成状态，也不要只改摘要而保留未校订图片层。
 
 ### 7. 输出验证
 
@@ -123,9 +140,10 @@ CLI 可能生成自动准备稿。若 `manifest.json` 状态为 `partial`，Agen
 
 ```bash
 python3 <skill_dir>/scripts/package_tool.py validate <package_dir>
+python3 <skill_dir>/scripts/mcu.py finalize <package_dir>
 ```
 
-验证失败时修复包内容。最终向用户报告摘要、转写、截图、短片和错误报告的具体路径。
+`validate` 负责基础文件契约，`finalize` 负责完成状态门禁。任一失败时先修复包内容。最终向用户报告摘要、转写、截图、短片和错误报告的具体路径。
 
 ## 证据与安全边界
 

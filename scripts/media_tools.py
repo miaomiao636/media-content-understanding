@@ -5,12 +5,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from console import configure_utf8_stdio
+try:
+    from .console import configure_utf8_stdio
+except ImportError:
+    from console import configure_utf8_stdio
 
 configure_utf8_stdio()
 
@@ -55,6 +59,54 @@ def ensure_output(path: str) -> Path:
     return output
 
 
+def storyboard_filter(interval: float, max_width: int, max_height: int) -> str:
+    """Resize selected storyboard frames inside FFmpeg instead of post-processing full-size JPEGs."""
+    scale = (
+        f"scale=w='min(iw,{max_width})':h='min(ih,{max_height})':"
+        "force_original_aspect_ratio=decrease"
+    )
+    return f"fps=1/{interval},{scale}"
+
+
+def detect_scene_changes(source: Path, threshold: float, max_scenes: int) -> list[float]:
+    ffmpeg = require_bin("ffmpeg")
+    completed = subprocess.run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-nostats",
+            "-i",
+            str(source),
+            "-an",
+            "-vf",
+            f"select='gt(scene,{threshold})',showinfo",
+            "-fps_mode",
+            "vfr",
+            "-f",
+            "null",
+            "-",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if completed.returncode:
+        raise RuntimeError(f"场景检测失败：{completed.stderr[-3000:]}")
+    values = []
+    for match in re.finditer(r"\bpts_time:([-+0-9.eE]+)", completed.stderr):
+        try:
+            value = round(float(match.group(1)), 3)
+        except ValueError:
+            continue
+        if not values or value != values[-1]:
+            values.append(value)
+        if len(values) >= max_scenes:
+            break
+    return values
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
@@ -77,7 +129,14 @@ def main() -> int:
     storyboard.add_argument("input")
     storyboard.add_argument("--interval", type=float, default=10.0)
     storyboard.add_argument("--max-frames", type=int, default=60)
+    storyboard.add_argument("--max-width", type=int, default=1280)
+    storyboard.add_argument("--max-height", type=int, default=720)
     storyboard.add_argument("--output-dir", required=True)
+
+    scenes = sub.add_parser("scenes")
+    scenes.add_argument("input")
+    scenes.add_argument("--threshold", type=float, default=0.3)
+    scenes.add_argument("--max-scenes", type=int, default=120)
 
     audio = sub.add_parser("audio")
     audio.add_argument("input")
@@ -104,6 +163,20 @@ def main() -> int:
                 raise RuntimeError(completed.stderr[-3000:])
             payload = json.loads(completed.stdout)
             print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
+
+        if args.command == "scenes":
+            if not 0 < args.threshold <= 1:
+                raise ValueError("threshold 必须大于 0 且不大于 1")
+            if args.max_scenes <= 0:
+                raise ValueError("max-scenes 必须大于 0")
+            print(
+                json.dumps(
+                    detect_scene_changes(source, args.threshold, args.max_scenes),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
             return 0
 
         ffmpeg = require_bin("ffmpeg")
@@ -156,8 +229,13 @@ def main() -> int:
             )
             print(output)
         elif args.command == "storyboard":
-            if args.interval <= 0 or args.max_frames <= 0:
-                raise ValueError("interval 和 max-frames 必须大于 0")
+            if (
+                args.interval <= 0
+                or args.max_frames <= 0
+                or args.max_width <= 0
+                or args.max_height <= 0
+            ):
+                raise ValueError("interval、max-frames、max-width 和 max-height 必须大于 0")
             output_dir = Path(args.output_dir).expanduser().resolve()
             output_dir.mkdir(parents=True, exist_ok=True)
             pattern = output_dir / "%03d.jpg"
@@ -168,7 +246,7 @@ def main() -> int:
                     "-i",
                     str(source),
                     "-vf",
-                    f"fps=1/{args.interval}",
+                    storyboard_filter(args.interval, args.max_width, args.max_height),
                     "-frames:v",
                     str(args.max_frames),
                     "-q:v",

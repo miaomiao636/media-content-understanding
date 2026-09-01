@@ -11,6 +11,7 @@ from scripts.source_adapter import (
     SourceRouter,
     YtDlpAdapter,
     _declared_duration,
+    _download_url,
     classify_failure,
     default_adapters,
     extract_source_id,
@@ -75,6 +76,44 @@ def test_browser_candidate_scoring_prefers_matching_media():
     )
 
 
+def test_browser_collects_only_cookies_applicable_to_each_media_url():
+    requested_urls = []
+
+    class Context:
+        def cookies(self, url):
+            requested_urls.append(url)
+            if "douyin.com" in url:
+                return [{"name": "session", "value": "douyin-secret"}]
+            return [{"name": "cdn-token", "value": "cdn-only"}]
+
+    urls = [
+        "https://www.douyin.com/media/source.mp4",
+        "https://cdn.example/video.mp4",
+    ]
+
+    headers = PlaywrightAdapter._cookie_headers_for_candidates(Context(), urls)
+
+    assert requested_urls == urls
+    assert headers[urls[0]] == "session=douyin-secret"
+    assert headers[urls[1]] == "cdn-token=cdn-only"
+    assert "douyin-secret" not in headers[urls[1]]
+
+
+def test_browser_media_download_rejects_loopback_before_connection(tmp_path):
+    with pytest.raises(AcquisitionError) as exc_info:
+        _download_url(
+            "http://127.0.0.1/private-media",
+            tmp_path / "media.bin",
+            headers={"Cookie": "session=browser-secret"},
+            timeout=2,
+            max_bytes=1024,
+        )
+
+    assert exc_info.value.error_type == "UNSAFE_MEDIA_URL"
+    assert exc_info.value.adapter == "playwright-browser"
+    assert not (tmp_path / "media.bin").exists()
+
+
 def test_declared_duration_prefers_player_total_and_element_duration():
     assert _declared_duration("00:07 / 13:27\n评论里有 35:43", [807.2]) == pytest.approx(807.2)
 
@@ -92,8 +131,33 @@ def test_browser_settings_are_propagated_to_all_adapters(tmp_path):
         }
     )
 
-    assert [adapter.max_bytes for adapter in adapters] == [321 * 1024 * 1024, 321 * 1024 * 1024]
-    assert adapters[1].profile_dir == profile.resolve()
+    assert [adapter.name for adapter in adapters] == [
+        "douyin-content",
+        "yt-dlp",
+        "playwright-browser",
+    ]
+    assert adapters[0].profile_dir == profile.resolve()
+    assert adapters[1].max_bytes == 321 * 1024 * 1024
+    assert adapters[2].max_bytes == 321 * 1024 * 1024
+    assert adapters[2].profile_dir == profile.resolve()
+
+
+def test_video_adapters_do_not_claim_douyin_note_routes():
+    note = "https://www.douyin.com/note/123"
+
+    assert YtDlpAdapter().supports(note) is False
+    assert PlaywrightAdapter().supports(note) is False
+
+
+def test_disabled_browser_fallback_reports_clear_note_adapter_error(monkeypatch, tmp_path):
+    monkeypatch.setattr("scripts.source_adapter.resolve_share_url", lambda value: value)
+    adapters = default_adapters({"acquisition": {"browser_fallback": False}})
+
+    with pytest.raises(AcquisitionError) as exc_info:
+        SourceRouter(adapters).acquire("https://www.douyin.com/note/123", tmp_path)
+
+    assert exc_info.value.error_type == "CONTENT_ADAPTER_DISABLED"
+    assert exc_info.value.adapter == "douyin-content"
 
 
 def test_playwright_uses_persistent_context_when_profile_is_configured(tmp_path):
@@ -248,3 +312,29 @@ def test_router_records_failover(monkeypatch, tmp_path):
     assert result.acquisition_method == "success"
     assert [item.adapter for item in result.attempts] == ["failing", "success"]
     assert result.attempts[0].error_type == "NETWORK_ERROR"
+
+
+def test_router_redacts_douyin_content_error_before_rethrow(monkeypatch, tmp_path):
+    class SecretFailure:
+        name = "douyin-content"
+
+        def available(self):
+            return True
+
+        def acquire(self, url, work_dir):
+            raise AcquisitionError(
+                "NETWORK_ERROR",
+                "failed https://media.example/image.jpg?signature=SECRET api_key=sk-secret-value",
+                adapter=self.name,
+            )
+
+    monkeypatch.setattr("scripts.source_adapter.resolve_share_url", lambda value: value)
+    with pytest.raises(AcquisitionError) as exc_info:
+        SourceRouter([SecretFailure()]).acquire(
+            "https://www.douyin.com/note/1", tmp_path
+        )
+
+    message = str(exc_info.value)
+    assert "SECRET" not in message
+    assert "sk-secret-value" not in message
+    assert "[REDACTED" in message

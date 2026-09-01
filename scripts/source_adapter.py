@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cross-platform acquisition adapters for public Douyin and Bilibili videos."""
+"""Cross-platform acquisition adapters for public Douyin and Bilibili content."""
 
 from __future__ import annotations
 
@@ -15,7 +15,25 @@ import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+
+try:
+    from .browser_verification import (
+        DEFAULT_POLL_SECONDS,
+        DEFAULT_TIMEOUT_SECONDS,
+        wait_for_user_verification,
+    )
+except ImportError:
+    from browser_verification import (
+        DEFAULT_POLL_SECONDS,
+        DEFAULT_TIMEOUT_SECONDS,
+        wait_for_user_verification,
+    )
+
+try:
+    from .sanitization import sanitize_error_text
+except ImportError:
+    from sanitization import sanitize_error_text
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -84,6 +102,9 @@ class AcquiredSource:
     metadata_path: Optional[str] = None
     acquisition_method: str = ""
     attempts: List[AcquisitionAttempt] = field(default_factory=list)
+    content_kind: str = "video"
+    body_text: str = ""
+    image_paths: List[str] = field(default_factory=list)
 
     def to_json(self) -> Dict[str, Any]:
         return asdict(self)
@@ -112,6 +133,9 @@ def validate_supported_url(value: str) -> Tuple[str, str]:
 def resolve_share_url(value: str, timeout: int = 20) -> str:
     """Resolve short links while keeping the destination inside supported platforms."""
     validate_supported_url(value)
+    parsed = urllib.parse.urlparse(value)
+    if re.search(r"/(?:note|video)/(?:\d+|BV[0-9A-Za-z]+|av\d+)", parsed.path, re.IGNORECASE):
+        return value.strip()
     request = urllib.request.Request(value, headers={"User-Agent": USER_AGENT}, method="HEAD")
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -196,6 +220,13 @@ class YtDlpAdapter:
             return True
         except ImportError:
             return shutil.which("yt-dlp") is not None
+
+    def supports(self, url: str) -> bool:
+        platform, _ = validate_supported_url(url)
+        return not (
+            platform == "douyin"
+            and bool(re.search(r"/note/\d+", urllib.parse.urlparse(url).path))
+        )
 
     def _command(self) -> List[str]:
         try:
@@ -288,19 +319,55 @@ def _download_url(
     headers: Dict[str, str],
     timeout: int,
     max_bytes: int,
+    resolver: Optional[Callable[..., Sequence[Tuple[Any, ...]]]] = None,
+    opener: Optional[Any] = None,
 ) -> Path:
-    request = urllib.request.Request(url, headers=headers)
-    total = 0
-    with urllib.request.urlopen(request, timeout=timeout) as response, output.open("wb") as handle:
-        while True:
-            chunk = response.read(1024 * 1024)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > max_bytes:
-                raise AcquisitionError("INPUT_TOO_LARGE", "浏览器捕获的媒体超过大小上限")
-            handle.write(chunk)
-    return output
+    try:
+        try:
+            from .douyin_content_adapter import build_safe_image_opener, validate_public_media_url
+        except ImportError:
+            from douyin_content_adapter import build_safe_image_opener, validate_public_media_url
+
+        validate_public_media_url(url, resolver=resolver)
+        client = opener or build_safe_image_opener(resolver=resolver)
+        if not bool(getattr(client, "mcu_dns_pinned", False)):
+            raise AcquisitionError(
+                "UNSAFE_MEDIA_URL",
+                "自定义媒体下载器未声明使用已验证 IP 连接",
+                adapter="playwright-browser",
+            )
+        request = urllib.request.Request(url, headers=headers)
+        total = 0
+        with client.open(request, timeout=timeout) as response, output.open("wb") as handle:
+            validate_public_media_url(response.geturl(), resolver=resolver)
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes:
+                    raise AcquisitionError(
+                        "INPUT_TOO_LARGE",
+                        "浏览器捕获的媒体超过大小上限",
+                        adapter="playwright-browser",
+                    )
+                handle.write(chunk)
+        return output
+    except AcquisitionError as exc:
+        output.unlink(missing_ok=True)
+        raise AcquisitionError(
+            exc.error_type,
+            str(exc),
+            adapter="playwright-browser",
+        ) from exc
+    except Exception as exc:
+        output.unlink(missing_ok=True)
+        error_type = getattr(exc, "error_type", "NETWORK_ERROR")
+        raise AcquisitionError(
+            str(error_type),
+            sanitize_error_text(exc),
+            adapter="playwright-browser",
+        ) from exc
 
 
 def _probe_media(path: Path) -> Dict[str, Any]:
@@ -398,6 +465,13 @@ class PlaywrightAdapter:
             return True
         except ImportError:
             return False
+
+    def supports(self, url: str) -> bool:
+        platform, _ = validate_supported_url(url)
+        return not (
+            platform == "douyin"
+            and bool(re.search(r"/note/\d+", urllib.parse.urlparse(url).path))
+        )
 
     def _prepare_profile_dir(self) -> None:
         if self.profile_dir is None:
@@ -503,6 +577,25 @@ class PlaywrightAdapter:
             score -= 1000
         return score
 
+    @staticmethod
+    def _cookie_headers_for_candidates(context: Any, urls: Sequence[str]) -> Dict[str, str]:
+        """Ask the browser for only the cookies applicable to each candidate URL."""
+        result: Dict[str, str] = {}
+        for url in dict.fromkeys(str(value) for value in urls):
+            if not url.startswith(("http://", "https://")):
+                continue
+            rows = context.cookies(url)
+            pairs = []
+            for item in rows:
+                name = str(item.get("name") or "")
+                value = str(item.get("value") or "")
+                if not name or not value or any(token in name + value for token in ("\r", "\n")):
+                    continue
+                pairs.append(f"{name}={value}")
+            if pairs:
+                result[url] = "; ".join(pairs)
+        return result
+
     def acquire(self, url: str, work_dir: Path) -> AcquiredSource:
         platform, _ = validate_supported_url(url)
         if not self.available():
@@ -518,7 +611,7 @@ class PlaywrightAdapter:
         page_text = ""
         title = ""
         final_url = url
-        cookies: List[Dict[str, Any]] = []
+        cookie_headers: Dict[str, str] = {}
         element_durations: List[float] = []
         user_agent = USER_AGENT
         try:
@@ -562,6 +655,25 @@ class PlaywrightAdapter:
                         except PlaywrightError:
                             continue
                     page.wait_for_timeout(15000)
+                    # Keep the browser visible for user verification if needed.
+                    if not self.headless:
+                        verification_ok = wait_for_user_verification(
+                            page,
+                            timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+                            poll_seconds=DEFAULT_POLL_SECONDS,
+                        )
+                        if not verification_ok:
+                            raise AcquisitionError(
+                                "CHALLENGE_REQUIRED",
+                                "浏览器验证或登录未在等待时间内完成，请人工完成后重试",
+                                adapter=self.name,
+                            )
+                        # Wait for any post-verification navigation to settle.
+                        try:
+                            page.wait_for_load_state("domcontentloaded", timeout=15000)
+                        except Exception:
+                            pass
+                        page.wait_for_timeout(3000)
                     final_url = page.url
                     validate_supported_url(final_url)
                     title = page.title()
@@ -595,7 +707,10 @@ class PlaywrightAdapter:
                                 pass
                         except PlaywrightError:
                             continue
-                    cookies = context.cookies()
+                    cookie_headers = self._cookie_headers_for_candidates(
+                        context,
+                        [str(item.get("url") or "") for item in candidates],
+                    )
                     user_agent = page.evaluate("navigator.userAgent") or USER_AGENT
                 finally:
                     if context is not None:
@@ -656,14 +771,7 @@ class PlaywrightAdapter:
         if not ranked:
             raise AcquisitionError("MEDIA_NOT_FOUND", "浏览器没有捕获到可下载的视频流", adapter=self.name)
 
-        cookie_header = "; ".join(
-            f"{item.get('name')}={item.get('value')}"
-            for item in cookies
-            if item.get("name") and item.get("value")
-        )
-        headers = {"User-Agent": user_agent, "Referer": final_url}
-        if cookie_header:
-            headers["Cookie"] = cookie_header
+        base_headers = {"User-Agent": user_agent, "Referer": final_url}
         downloaded: List[Dict[str, Any]] = []
         exceeded_limit = False
         maximum_size = max((int(item.get("size") or 0) for item in deduped), default=0)
@@ -676,9 +784,14 @@ class PlaywrightAdapter:
             mime = str(item.get("mime") or "").split(";", 1)[0]
             extension = mimetypes.guess_extension(mime) or ".mp4"
             candidate_path = work_dir / f"browser-candidate-{candidate_index + 1:03d}{extension}"
+            candidate_url = str(item["url"])
+            headers = dict(base_headers)
+            cookie_header = cookie_headers.get(candidate_url)
+            if cookie_header:
+                headers["Cookie"] = cookie_header
             try:
                 _download_url(
-                    str(item["url"]),
+                    candidate_url,
                     candidate_path,
                     headers=headers,
                     timeout=self.timeout_seconds,
@@ -792,6 +905,9 @@ class SourceRouter:
         canonical = resolve_share_url(input_url)
         attempts: List[AcquisitionAttempt] = []
         for adapter in self.adapters:
+            supports = getattr(adapter, "supports", None)
+            if callable(supports) and not supports(canonical):
+                continue
             if not adapter.available():
                 attempts.append(
                     AcquisitionAttempt(
@@ -801,7 +917,9 @@ class SourceRouter:
                 continue
             try:
                 result = adapter.acquire(canonical, work_dir)
-                attempts.append(AcquisitionAttempt(adapter=adapter.name, ok=True))
+                attempts.append(
+                    AcquisitionAttempt(adapter=result.acquisition_method or adapter.name, ok=True)
+                )
                 result.input_url = input_url
                 result.platform = platform
                 result.attempts = attempts
@@ -812,10 +930,26 @@ class SourceRouter:
                         adapter=exc.adapter or adapter.name,
                         ok=False,
                         error_type=exc.error_type,
-                        message=str(exc)[-1000:],
+                        message=sanitize_error_text(exc)[-1000:],
                     )
                 )
+                if (exc.adapter or adapter.name) == "douyin-content":
+                    raise AcquisitionError(
+                        exc.error_type,
+                        sanitize_error_text(exc),
+                        adapter=exc.adapter or adapter.name,
+                    ) from exc
         detail = "; ".join(f"{item.adapter}:{item.error_type}" for item in attempts)
+        if (
+            not attempts
+            and platform == "douyin"
+            and re.search(r"/note/\d+", urllib.parse.urlparse(canonical).path)
+        ):
+            raise AcquisitionError(
+                "CONTENT_ADAPTER_DISABLED",
+                "抖音图文适配器未启用；请开启 acquisition.browser_fallback 并安装 Playwright",
+                adapter="douyin-content",
+            )
         raise AcquisitionError("ALL_ADAPTERS_FAILED", f"所有来源适配器均失败：{detail}")
 
 
@@ -827,7 +961,21 @@ def default_adapters(config: Optional[Dict[str, Any]] = None) -> List[Any]:
     max_download_mb = float(acquisition.get("max_download_mb", 2048))
     if max_download_mb <= 0:
         raise ValueError("acquisition.max_download_mb 必须大于 0")
-    adapters: List[Any] = [YtDlpAdapter(cookie_browser=cookie_browser, max_download_mb=max_download_mb)]
+    douyin_content_adapter: Optional[Any] = None
+    if acquisition.get("browser_fallback", True):
+        try:
+            from .douyin_content_adapter import DouyinContentAdapter
+        except ImportError:
+            from douyin_content_adapter import DouyinContentAdapter
+
+        douyin_content_adapter = DouyinContentAdapter(
+            headless=bool(acquisition.get("browser_headless", False)),
+            profile_dir=profile_dir,
+        )
+    adapters: List[Any] = []
+    if douyin_content_adapter is not None:
+        adapters.append(douyin_content_adapter)
+    adapters.append(YtDlpAdapter(cookie_browser=cookie_browser, max_download_mb=max_download_mb))
     if acquisition.get("browser_fallback", True):
         adapters.append(
             PlaywrightAdapter(

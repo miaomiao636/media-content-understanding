@@ -73,5 +73,15 @@
         "max_output_tokens": 2000
       }
     ]
+  },
+  "evidence": {
+    "max_images": 6,
+    "max_clips": 3,
+    "dedupe_seconds": 4,
+    "clip_seconds": 12,
+    "scene_threshold": 0.3,
+    "max_scene_changes": 120,
+    "storyboard_max_width": 1280,
+    "storyboard_max_height": 720
   }
 }

@@ -1,0 +1,81 @@
+{
+  "schema_version": "douyin-public-acquisition-audit/v1",
+  "record_type": "sanitized-live-acquisition-receipt",
+  "observed_at": "2026-08-30T14:55:45Z",
+  "sample": {
+    "public_url": "https://www.douyin.com/note/7659275356428852849",
+    "source_id": "7659275356428852849"
+  },
+  "result": {
+    "content_kind": "mixed",
+    "title": "祝我生日快乐！！！#极速小鱼",
+    "author": "我是梓渝",
+    "published_at": "2026-07-06 13:00:12",
+    "body_chars": 14,
+    "body_sha256": "066a25d63a2de670b0c5a8b6079bc629a3e0693bf7b26394dadc2b3df5f02a6a",
+    "image_count": 8,
+    "images": [
+      {
+        "position": 1,
+        "filename": "001.webp",
+        "bytes": 213502,
+        "sha256": "4b85e93a00f29aba6aa8fe6d4995832e8875d1b5569e06cd5393a3bdab2dd680"
+      },
+      {
+        "position": 2,
+        "filename": "002.webp",
+        "bytes": 472200,
+        "sha256": "26416d2fcf685fa53026b1a78001e98740c25df0785958272a3133d3b3dd197e"
+      },
+      {
+        "position": 3,
+        "filename": "003.webp",
+        "bytes": 204192,
+        "sha256": "9e01e8cc0cfe32481a338fd3ea210058e7557e5b092fd908d30a1e73deb3bdb2"
+      },
+      {
+        "position": 4,
+        "filename": "004.webp",
+        "bytes": 287050,
+        "sha256": "3ccc01cbc0c2e4ffd8decb31d3340531b4c1273a0cfd81813e57192fcaea49ae"
+      },
+      {
+        "position": 5,
+        "filename": "005.webp",
+        "bytes": 149754,
+        "sha256": "478f4ff66cc615a2fc91a5f250ea98702667e4951a84e12218124e3080763158"
+      },
+      {
+        "position": 6,
+        "filename": "006.webp",
+        "bytes": 481150,
+        "sha256": "5bb8974dcca2c87330233b699061e42a3b451ddbdf24d4fe87d3c6972396917a"
+      },
+      {
+        "position": 7,
+        "filename": "007.webp",
+        "bytes": 75576,
+        "sha256": "82f9ad6bb3c80c4aa45aff0f037f0959a07f3c72e6f7b39790809461bf847c13"
+      },
+      {
+        "position": 8,
+        "filename": "008.webp",
+        "bytes": 139914,
+        "sha256": "2e37137b9966bbb4ed1237c7ce209f282bfddcd1ad1684d92923ee99f3674f7b"
+      }
+    ],
+    "acquisition_method": "douyin-content"
+  },
+  "safety": {
+    "browser_profile_used": false,
+    "cookie_browser_used": false,
+    "remote_media_urls_stored": false,
+    "metadata_remote_url_scan_passed": true,
+    "challenge_bypassed": false
+  },
+  "replay_boundary": {
+    "fresh_live_run_required_for_current_availability": true,
+    "challenge_or_login_is_not_success": true
+  },
+  "receipt_sha256": "4e02de7ed855c077ea6608498e2dab8c8039ad64534deb65c144339995969336"
+}

@@ -1,4 +1,6 @@
-from scripts.mcu import VisualCallBudget, slug, vision_router_command
+import subprocess
+
+from scripts.mcu import VisualCallBudget, slug, vision_router_command, visual_summary
 
 
 def test_slug_removes_unsafe_filename_characters():
@@ -27,3 +29,34 @@ def test_visual_call_budget_exhausts_when_child_usage_is_unknown():
     budget.consume_report({"status": "external_success"})
 
     assert budget.snapshot() == {"limit": 5, "used": 5, "remaining": 0}
+
+
+def test_visual_summary_timeout_returns_partial_failure_report(monkeypatch, tmp_path):
+    package_dir = tmp_path / "package"
+    job_dir = tmp_path / "job"
+    package_dir.mkdir()
+    job_dir.mkdir()
+    frame = tmp_path / "frame.jpg"
+    frame.write_bytes(b"frame")
+    budget = VisualCallBudget(limit=3)
+
+    def timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired("vision-router", 600)
+
+    monkeypatch.setattr("scripts.mcu.subprocess.run", timeout)
+
+    report = visual_summary(
+        package_dir,
+        job_dir,
+        None,
+        [frame],
+        "",
+        budget=budget,
+        config_path=None,
+    )
+
+    assert report is not None
+    assert report["status"] == "external_router_failed"
+    assert report["errors"][0]["type"] == "VISION_ROUTER_FAILED"
+    assert report["errors"][0]["fatal"] is False
+    assert report["workflow_budget"] == {"limit": 3, "used": 3, "remaining": 0}

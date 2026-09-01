@@ -63,6 +63,16 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_upload_mb": 100,
         "providers": [],
     },
+    "evidence": {
+        "max_images": 6,
+        "max_clips": 3,
+        "dedupe_seconds": 4,
+        "clip_seconds": 12,
+        "scene_threshold": 0.3,
+        "max_scene_changes": 120,
+        "storyboard_max_width": 1280,
+        "storyboard_max_height": 720,
+    },
 }
 
 
@@ -123,6 +133,24 @@ def validate_config(config: Dict[str, Any]) -> None:
     verification_mode = str(config["vision"].get("verification_mode", "low-confidence"))
     if verification_mode not in {"none", "low-confidence"}:
         raise ValueError(f"vision.verification_mode 无效：{verification_mode}")
+    for key in ("dedupe_seconds", "clip_seconds"):
+        if _number(config, "evidence", key) <= 0:
+            raise ValueError(f"evidence.{key} 必须大于 0")
+    threshold = _number(config, "evidence", "scene_threshold")
+    if threshold <= 0 or threshold > 1:
+        raise ValueError("evidence.scene_threshold 必须大于 0 且不大于 1")
+    for key in (
+        "max_images",
+        "max_clips",
+        "max_scene_changes",
+        "storyboard_max_width",
+        "storyboard_max_height",
+    ):
+        value = _number(config, "evidence", key)
+        minimum = 0 if key in {"max_images", "max_clips"} else 1
+        if value < minimum or not value.is_integer():
+            comparison = "必须是非负整数" if minimum == 0 else "必须是正整数"
+            raise ValueError(f"evidence.{key} {comparison}")
 
 
 def load_config(explicit: Optional[str] = None) -> Tuple[Dict[str, Any], Optional[Path]]:
@@ -138,7 +166,7 @@ def load_config(explicit: Optional[str] = None) -> Tuple[Dict[str, Any], Optiona
     else:
         path = None
 
-    for section in ("paths", "acquisition", "asr", "retention", "vision"):
+    for section in ("paths", "acquisition", "asr", "retention", "vision", "evidence"):
         _require_section(config, section)
 
     paths = config["paths"]

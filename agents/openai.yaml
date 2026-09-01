@@ -1,4 +1,4 @@
 interface:
-  display_name: "抖音与B站视频理解"
-  short_description: "读取抖音或B站视频，结合字幕、ASR与画面证据生成精炼内容"
-  default_prompt: "使用 $media-content-understanding 理解这个抖音或哔哩哔哩视频链接，并输出精炼文字和必要的视觉证据。"
+  display_name: "抖音与B站内容理解"
+  short_description: "读取抖音图文或视频及B站视频，结合文本、字幕、ASR与画面证据生成精炼内容"
+  default_prompt: "使用 $media-content-understanding 理解这个抖音或哔哩哔哩内容链接，并输出精炼文字和必要的视觉证据。"
